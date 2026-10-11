@@ -3,6 +3,12 @@ on:
   push:
     tags: ['v0.1.1', 'v0.1.2']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a new prerelease after validation (refuse existing releases)
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -14,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          # Checkout the immutable event commit so annotated tag refs stay intact.
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
@@ -33,6 +41,7 @@ jobs:
       - run: npm run build:release
       - run: node scripts/release-assets.js
       - name: Draft, upload, verify and publish prerelease
+        if: github.event_name == 'push' || inputs.publish == true
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/publish-prerelease.js

@@ -20,3 +20,15 @@ test('release probe uses valid SDK result schemas and never initializes state',a
   assert.deepEqual(await probeReadOnlyClient(bridge.client,{timeout:3000}),['dsh_cancel','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']);
   assert.equal(fs.existsSync(path.join(f.dir,'state')),false);
 });
+
+test('release checkout preserves annotated refs and manual validation cannot publish by default',async()=>{
+  const yaml=await import('js-yaml');
+  const workflow=yaml.load(fs.readFileSync(path.join(repoRoot(),'.github','workflows','release.yml'),'utf8'));
+  const steps=workflow.jobs.release.steps;
+  const checkout=steps.find(step=>step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with.ref,'${{ github.sha }}');
+  assert.equal(checkout.with['fetch-depth'],0);
+  assert.equal(workflow.on.workflow_dispatch.inputs.publish.type,'boolean');
+  assert.equal(workflow.on.workflow_dispatch.inputs.publish.default,false);
+  assert.equal(steps.find(step=>step.name==='Draft, upload, verify and publish prerelease').if,"github.event_name == 'push' || inputs.publish == true");
+});
