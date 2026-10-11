@@ -2,6 +2,7 @@ name: Windows prerelease
 on:
   push:
     tags: ['v0.1.1', 'v0.1.2']
+  workflow_dispatch:
 permissions:
   contents: write
 concurrency:

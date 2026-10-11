@@ -1,8 +1,8 @@
 {
-  "name": "codex-dsh-mcp-plugin",
-  "version": "0.1.1",
+  "name": "dsh-mcp-plugin",
+  "version": "0.1.2",
   "private": true,
-  "description": "DSH-side report and steering channel for the codex-dsh-mcp bridge.",
+  "description": "DSH-side durable reporting, guidance and permission ceiling for the generic dsh-mcp bridge.",
   "type": "module",
   "license": "MIT",
   "main": "index.js",

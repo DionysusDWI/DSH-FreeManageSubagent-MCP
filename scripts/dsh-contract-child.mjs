@@ -6,7 +6,7 @@ import { pathToFileURL,fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
 const archive=process.argv[2],sandbox=process.argv[3],moduleBase=path.join(archive,'dsh','node_modules');
 const isolatedHome=path.join(sandbox,'home');
-process.env.DSH_HOME=isolatedHome;delete process.env.CODEX_DSH_MCP_ALLOW_PROVISION;
+process.env.DSH_HOME=isolatedHome;delete process.env.DSH_MCP_ALLOW_PROVISION;
 registerHooks({resolve(specifier,context,nextResolve){
   if(specifier.startsWith('@deepseek-ai/')) {
     const parts=specifier.split('/'),pkg=parts.slice(0,2).join('/'),tail=parts.slice(2).join('/'),root=path.join(moduleBase,...pkg.split('/'));
@@ -34,8 +34,8 @@ const guards=[];ctx.provide('tools');ctx.provide('agents');ctx.provide('permissi
 const persistence=new Persistence(ctx,{root:path.join(sandbox,'sessions'),compression:'none'});
 const fileSandbox=new FileSandbox(ctx,{cwd:sandbox,diffBasisMaxBytes:1024*1024});
 const file=path.join(sandbox,'inbox.json');createChannel(file,{conversationKey:'contract',taskId:'contract-task'});
-const env={CODEX_DSH_MCP_CHANNEL:file,CODEX_DSH_MCP_TASK:'contract-task',CODEX_DSH_MCP_CONVERSATION:'contract',CODEX_DSH_MCP_WORKSPACE:sandbox,CODEX_DSH_MCP_SANDBOX:'read-only'};
-env.CODEX_DSH_MCP_ACCEPTANCE_TASK=JSON.stringify({version:1,taskId:'contract-task',identity:'contract',caseId:'D3',correlationId:'no-model-real-API-probe',observation:{maxChildren:2,fixtureRoots:[sandbox],expectedModel:{provider:'deepseek-official',model:'deepseek-flash'}}});
+const env={DSH_MCP_CHANNEL:file,DSH_MCP_TASK:'contract-task',DSH_MCP_SCOPE:'contract',DSH_MCP_WORKSPACE:sandbox,DSH_MCP_SANDBOX:'read-only'};
+env.DSH_MCP_ACCEPTANCE_TASK=JSON.stringify({version:1,taskId:'contract-task',identity:'contract',caseId:'D3',correlationId:'no-model-real-API-probe',observation:{maxChildren:2,fixtureRoots:[sandbox],expectedModel:{provider:'deepseek-official',model:'deepseek-flash'}}});
 applyPlugin(ctx,{env});
 const session=ctx.sessions.create('contract-main',{meta:{cwd:sandbox}});
 const durable=await persistence.create(session.header);
@@ -71,7 +71,7 @@ await new Promise(resolve=>setTimeout(resolve,20));
 writeCtx.provide('tools');writeCtx.provide('agents');writeCtx.provide('permissionPresets');writeCtx.set('tools',{guard(fn){assert.equal(typeof fn,'function');},register(tool){assert.equal(typeof tool.execute,'function');}});writeCtx.set('agents',{});writeCtx.set('permissionPresets',{});
 const writePersistence=new Persistence(writeCtx,{root:path.join(sandbox,'write-sessions'),compression:'none'}),writeFs=new FileSandbox(writeCtx,{cwd:sandbox,diffBasisMaxBytes:1024*1024});
 const writeDir=path.join(sandbox,'write-task');fs.mkdirSync(writeDir);const writeChannel=path.join(writeDir,'inbox.json');createChannel(writeChannel,{conversationKey:'contract',taskId:'write-task'});
-applyPlugin(writeCtx,{env:{...env,CODEX_DSH_MCP_ACCEPTANCE_TASK:'',CODEX_DSH_MCP_CHANNEL:writeChannel,CODEX_DSH_MCP_TASK:'write-task',CODEX_DSH_MCP_SANDBOX:'workspace-write'}});
+applyPlugin(writeCtx,{env:{...env,DSH_MCP_ACCEPTANCE_TASK:'',DSH_MCP_CHANNEL:writeChannel,DSH_MCP_TASK:'write-task',DSH_MCP_SANDBOX:'workspace-write'}});
 const writeSession=writeCtx.sessions.create('contract-write',{meta:{cwd:sandbox}}),writeDurable=await writePersistence.create(writeSession.header);
 setSandboxMode(writeSession,'danger-full-access');setApprovalPolicy(writeSession,'never');
 await writeCtx.serial('agent/created',{agent:{id:writeSession.id,session:writeSession,cancel(){},async whenIdle(){}}});
@@ -87,7 +87,7 @@ const smokePersistence=new Persistence(smokeCtx,{root:path.join(sandbox,'smoke4-
 const smokeChannel=path.join(smokeDir,'inbox.json');createChannel(smokeChannel,{conversationKey:'contract',taskId:'smoke4-task'});
 const smokeCommand='Start-Sleep -Seconds 180',smokeHash=(await import('node:crypto')).createHash('sha256').update(smokeCommand).digest('hex'),smokeFile=path.join(sandbox,'workspace-write-allowed.txt');
 const smokeReceipt={version:1,suite:'smoke4',taskId:'smoke4-task',identity:'contract',caseId:'S1',correlationId:'no-model-smoke4-real-api',observation:{maxChildren:0,fixtureRoots:[sandbox],toolPolicy:{allowedTools:['read','pwsh','report'],files:[smokeFile],commandHashes:[smokeHash],commandTargets:{[smokeHash]:[]}}}};
-applyPlugin(smokeCtx,{env:{...env,CODEX_DSH_MCP_CHANNEL:smokeChannel,CODEX_DSH_MCP_TASK:'smoke4-task',CODEX_DSH_MCP_SANDBOX:'read-only',CODEX_DSH_MCP_ACCEPTANCE_TASK:JSON.stringify(smokeReceipt)}});
+applyPlugin(smokeCtx,{env:{...env,DSH_MCP_CHANNEL:smokeChannel,DSH_MCP_TASK:'smoke4-task',DSH_MCP_SANDBOX:'read-only',DSH_MCP_ACCEPTANCE_TASK:JSON.stringify(smokeReceipt)}});
 const smokeSession=smokeCtx.sessions.create('contract-smoke4',{meta:{cwd:sandbox}}),smokeDurable=await smokePersistence.create(smokeSession.header);
 let smokeCancelled=false;const smokeAgent={id:smokeSession.id,session:smokeSession,cancel(){smokeCancelled=true;},async whenIdle(){}};
 await smokeCtx.serial('agent/created',{agent:smokeAgent});
@@ -126,5 +126,7 @@ for(let call=1;call<=2;call++){
 }
 assert.equal(mockInstalls,1);
 const profilePreparation={profile:profileSnapshot.name,fingerprint:profileSnapshot.fingerprint,isolatedHome:true,realPrepareCalls:2,results:prepareResults,mockInstallation:true,realPluginInstallCalls:0,runProfileCalls:0,modelCalls:0};
-console.log(JSON.stringify({persistedRestore:true,fileReadOnlyDenied:true,fileWorkspaceWriteAllowed:true,baseline:'0.2.0-rc.2',mainMode:ctx.sandboxPolicy.resolve({session}).mode,mainApproval:ctx.approval.effectivePolicy(session),childRole:'subagent',pluginLoaded:true,smoke4ActionPolicy,acceptanceObservation:{defaultOffForWriteProbe:true,realPolicyHookOrderVerified:true,events:observation.map(e=>e.event),actualModelCalls:0,actualToolExecutionCalls:0},profilePreparation,modelCalls:0}));
+const {verifyNativeSessions}=await import('../lib/session-verify.js');
+const nativeSessionVerification=await verifyNativeSessions({runtime:probeRuntime,env:probeRuntime.env,sessionRoot:path.join(sandbox,'sessions'),sessions:[{sessionId:session.id,workspace:sandbox}]});
+console.log(JSON.stringify({nativeSessionVerification,persistedRestore:true,fileReadOnlyDenied:true,fileWorkspaceWriteAllowed:true,baseline:'0.2.0-rc.2',mainMode:ctx.sandboxPolicy.resolve({session}).mode,mainApproval:ctx.approval.effectivePolicy(session),childRole:'subagent',pluginLoaded:true,smoke4ActionPolicy,acceptanceObservation:{defaultOffForWriteProbe:true,realPolicyHookOrderVerified:true,events:observation.map(e=>e.event),actualModelCalls:0,actualToolExecutionCalls:0},profilePreparation,modelCalls:0}));
 await ctx.emit('dispose');

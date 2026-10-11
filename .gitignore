@@ -14,3 +14,9 @@ native/windows-job-host.exe
 *.db
 *.sqlite*
 *.log
+
+# Historical local instructions are not public release material.
+docs/joint-acceptance.md
+docs/smoke4-acceptance.md
+docs/windows-guardian-integrity.md
+skills/*/agents/

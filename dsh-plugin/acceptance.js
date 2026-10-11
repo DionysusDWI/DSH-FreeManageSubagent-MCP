@@ -6,8 +6,8 @@ import {withFileLockSync} from './file-lock.js';
 import {appendJsonLine} from './io.js';
 const digest=v=>crypto.createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v)).digest('hex');
 export function createAcceptanceObserver(config,env=process.env) {
-  if(!env.CODEX_DSH_MCP_ACCEPTANCE_TASK) return null;
-  const receipt=JSON.parse(env.CODEX_DSH_MCP_ACCEPTANCE_TASK);
+  if(!env.DSH_MCP_ACCEPTANCE_TASK) return null;
+  const receipt=JSON.parse(env.DSH_MCP_ACCEPTANCE_TASK);
   if(receipt.version!==1||receipt.taskId!==config.taskId||receipt.identity!==config.conversationKey||typeof receipt.correlationId!=='string'||typeof receipt.caseId!=='string'||!Number.isInteger(receipt.observation?.maxChildren)) throw new Error('Acceptance task observation owner/correlation mismatch.');
   const file=path.join(config.dir,'acceptance-events.ndjson'),children=new Set(),policy=receipt.suite==='smoke4'?receipt.observation.toolPolicy:null;
   if(receipt.suite==='smoke4'&&(!policy||!['allowedTools','files','commandHashes'].every(k=>Array.isArray(policy[k]))||!policy.commandTargets||typeof policy.commandTargets!=='object'||policy.commandHashes.some(hash=>!Array.isArray(policy.commandTargets[hash])))) throw new Error('smoke4 requires a bound pre-tool action policy; execution is refused.');

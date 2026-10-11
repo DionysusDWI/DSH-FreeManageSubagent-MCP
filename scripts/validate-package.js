@@ -1,44 +1,14 @@
-/** Portable Agent Plugins 1.0.0 manifests; no network, provisioning or models. */
-import fs from 'node:fs';
-import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import Ajv2020 from 'ajv/dist/2020.js';
-import yaml from 'js-yaml';
-import {repoRoot} from '../lib/paths.js';
-export function validatePackage(root=repoRoot()) {
-  root=path.resolve(root);
-  const ajv=new Ajv2020({allErrors:true,strict:true,validateFormats:false});
-  for(const name of ['plugin','mcp']) {
-    const schema=JSON.parse(fs.readFileSync(path.join(root,'docs','schemas',name+'.schema.json'),'utf8'));
-    const document=JSON.parse(fs.readFileSync(path.join(root,name+'.json'),'utf8'));
-    const check=ajv.compile(schema); if(!check(document))throw new Error(name+'.json: '+ajv.errorsText(check.errors));
-  }
-  const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));
-  const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  if(manifest.version!==pkg.version)throw new Error('Plugin/package version mismatch.');
-  const onboarding=manifest.extensions?.['com.openai']?.onboardingSkill;
-  if(typeof onboarding!=='string'||!onboarding.startsWith('./'))throw new Error('Onboarding skill must be plugin-relative.');
-  const onboardingFile=path.resolve(root,onboarding);if(!onboardingFile.startsWith(root+path.sep)||!fs.statSync(onboardingFile).isFile())throw new Error('Invalid onboarding skill path.');
-  const config=JSON.parse(fs.readFileSync(path.join(root,'mcp.json'),'utf8'));
-  for(const server of Object.values(config.mcpServers)) {
-    if(server.type!=='stdio')throw new Error('This local plugin must use stdio.');
-    if(server.command.startsWith('./')){const exe=path.resolve(root,server.command);if(!exe.startsWith(root+path.sep)||!fs.statSync(exe).isFile())throw new Error('Bundled executable missing or out of bounds.');}
-    for(const text of [...(server.args ?? []),server.cwd ?? '',...Object.values(server.env ?? {})]) {
-      if(/\$\{(?!PLUGIN_ROOT\}|PLUGIN_DATA\})/.test(text))throw new Error('Unknown portable manifest variable.');
-      if(text.includes('\0'))throw new Error('NUL in portable config.');
-      if(/(^|[\\/])\.\.([\\/]|$)/.test(text))throw new Error('Parent traversal in portable config.');
-    }
-  }
-  const skills=[];
-  for(const name of fs.readdirSync(path.join(root,'skills'))) {
-    const file=path.join(root,'skills',name,'SKILL.md');if(!fs.existsSync(file))continue;
-    const text=fs.readFileSync(file,'utf8'),front=/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
-    if(!front)throw new Error('Skill frontmatter missing: '+name);
-    const meta=yaml.load(front[1]);if(meta.name!==name||!/^[a-z0-9-]{1,64}$/.test(name)||typeof meta.description!=='string'||!meta.description.trim())throw new Error('Invalid skill metadata: '+name);
-    if(/\b(?:TODO|TBD)\b/.test(text))throw new Error('Unfinished skill: '+name);
-    skills.push(name);
-  }
-  if(!skills.includes('dsh-setup')||!skills.includes('dsh-delegate'))throw new Error('Required setup/delegation skills missing.');
-  return {version:pkg.version,manifestSchema:'Agent Plugins 1.0.0',servers:Object.keys(config.mcpServers),skills};
+/** Generic distribution validation. No provisioning, process probe or model. */
+import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {repoRoot} from '../lib/paths.js';
+export function validatePackage(root=repoRoot()){
+ root=path.resolve(root);const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')),lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json'),'utf8'));
+ if(pkg.name!=='dsh-mcp'||pkg.version!=='0.1.2'||lock.name!==pkg.name||lock.version!==pkg.version)throw new Error('Generic package/lock identity mismatch.');
+ for(const file of ['plugin.json','mcp.json'])if(fs.existsSync(path.join(root,file)))throw new Error('Codex distribution entry must not be present: '+file);
+ for(const [name,entry] of Object.entries(pkg.bin??{})){if(!['dsh-mcp','codex-dsh-mcp'].includes(name)||!entry.startsWith('./bin/'))throw new Error('Invalid CLI entry.');const full=path.resolve(root,entry);if(!full.startsWith(root+path.sep)||!fs.statSync(full).isFile())throw new Error('CLI entry missing or escaped.');}
+ if(pkg.bin?.['dsh-mcp']!=='./bin/dsh-mcp.js')throw new Error('Primary CLI missing.');
+ const plugin=JSON.parse(fs.readFileSync(path.join(root,'dsh-plugin','package.json'),'utf8'));if(plugin.name!=='dsh-mcp-plugin'||plugin.version!==pkg.version)throw new Error('DSH execution plugin identity mismatch.');
+ const entry=fs.readFileSync(path.join(root,'bin','dsh-mcp.js'),'utf8');if(/PLUGIN_ROOT|PLUGIN_DATA/.test(entry))throw new Error('Client plugin variable dependency.');
+ if(fs.existsSync(path.join(root,'release-manifest.json'))){const manifest=JSON.parse(fs.readFileSync(path.join(root,'release-manifest.json'),'utf8'));if(manifest.node!=='v24.19.0'||manifest.arch!=='x64'||manifest.platform!=='win32'||!/^[a-f0-9]{40}$/.test(manifest.sourceCommit))throw new Error('Invalid release provenance.');if(!fs.existsSync(path.join(root,'runtime','node.exe'))||!fs.existsSync(path.join(root,'runtime','LICENSE.txt'))||!fs.existsSync(path.join(root,'native','windows-job-host.exe')))throw new Error('Self-contained runtime/guardian/license missing.');}
+ return {name:pkg.name,version:pkg.version,transport:'stdio',servers:['dsh-mcp'],tools:6,automaticProvisioning:false};
 }
-if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) console.log(JSON.stringify(validatePackage(process.argv[2]),null,2));
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))console.log(JSON.stringify(validatePackage(process.argv[2]),null,2));

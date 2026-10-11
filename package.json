@@ -1,48 +1,45 @@
 {
-  "name": "codex-dsh-mcp",
-  "version": "0.1.1",
+  "name": "dsh-mcp",
+  "version": "0.1.2",
   "private": true,
-  "description": "MCP server that lets Codex drive DeepSeek Harness (DSH) as an isolated, self-orchestrating subagent with proactive reporting.",
+  "description": "Generic local stdio MCP for supervised DSH Desktop tasks, explicit native sessions and durable reports.",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=24.19.0"
   },
   "bin": {
+    "dsh-mcp": "./bin/dsh-mcp.js",
     "codex-dsh-mcp": "./bin/codex-dsh-mcp.js"
   },
   "exports": {
     ".": "./lib/server.js",
-    "./conversation": "./lib/conversation.js",
     "./overlay": "./lib/overlay.js",
     "./stream": "./lib/dsh-stream.js",
-    "./report-queue": "./lib/report-queue.js"
+    "./report-queue": "./lib/report-queue.js",
+    "./sessions": "./lib/sessions.js"
   },
   "files": [
     "bin",
     "lib",
     "dsh-plugin",
-    "docs",
+    "docs/public",
+    "docs/releases",
     "README.md",
-    "native",
-    "scripts",
-    "skills",
-    "plugin.json",
-    "mcp.json",
-    "LICENSE"
+    "LICENSE",
+    "package-lock.json"
   ],
   "scripts": {
-    "start": "node ./bin/codex-dsh-mcp.js",
+    "start": "node ./bin/dsh-mcp.js",
     "test": "node scripts/test.js",
-    "smoke": "node ./test/smoke.mjs",
-    "bootstrap": "node ./bin/codex-dsh-mcp.js --bootstrap",
+    "bootstrap": "node ./bin/dsh-mcp.js bootstrap",
     "build:native": "node scripts/build-native.js",
     "build:release": "node scripts/build-release.js",
     "validate:package": "node scripts/validate-package.js",
     "check:dsh-contract": "node scripts/check-dsh-contract.js",
     "check:guardian": "node scripts/check-guardian.js",
-    "smoke:resume": "node ./test/resume-smoke.mjs",
-    "joint:acceptance": "node ./test/joint-acceptance.mjs"
+    "config": "node ./bin/dsh-mcp.js config",
+    "migrate-state": "node ./bin/dsh-mcp.js migrate-state"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",

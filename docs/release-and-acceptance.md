@@ -1,9 +1,9 @@
-# Historical 0.1.1 release boundaries
+# Release and model acceptance boundaries
 
-This is a prerelease of the existing Codex plugin implementation. Zero-model verification checks unit behavior, manifests, supervised process cleanup and isolated DSH API preparation; it does not certify real model execution or the plugin lifecycle of a specific client.
+Both 0.1.1 and 0.1.2 are prereleases. Each has a separate annotated tag, source commit and immutable asset set. Tag/version/asset collisions stop; no force-push, moved tag or overwritten asset is permitted.
 
-Never run test/smoke.mjs, test/resume-smoke.mjs or paid joint acceptance without separately scoped model-cost authorization. Four top-level attempts are not a monetary limit or a limit of four underlying model requests. Existing consumed controls must never be reused.
+Release automation uses Windows x64, Node 24.19.0, pinned Actions, lockfile installation, zero-model tests and public file allowlists. It creates a draft, uploads ZIP/manifest/checksums/sanitized summary, checks GitHub server-side SHA-256 against local SHA256SUMS, then publishes as prerelease. A draft retained after failure must be investigated; normal publish refuses an existing release.
 
-Profile provisioning is explicit and separate from model-cost authorization. Existing manual profiles and historical evidence must be preserved. No ACL changes, elevation, automatic access escalation or provider/model fallback is permitted by setup.
+All actual model tasks, native profile provisioning in a user's home, provider/model changes and full-access work require separately scoped authorization. No npm publication occurs. The old paid smoke and joint acceptance drivers are retained only in the historical v0.1.1 tag; they do not certify or authorize 0.1.2.
 
-Unverified: real multi-chat routing and reconnection, paid child agents, full-access, the complete workspace-lock matrix with real agents, frontend cancellation, and large real reports. OS EOF and cancellation tests use supervised synthetic processes. Non-Windows platforms are not release-qualified.
+The original four-attempt real-host ledger remains 0/4, untouched. New 0.1.2 model acceptance requires a fresh candidate binding and fresh control, never reused historical controls. Test summaries omit local paths, host identities, process logs and native history. Raw local evidence remains outside Git and release assets.

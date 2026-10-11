@@ -14,7 +14,7 @@ function runnerFixture(t) {const temp=tempDir('runner-fault');t.after(temp.clean
 function proof(input) {writeJsonAtomic(path.join(input.paths.dir,'policy.json'),{version:2,conversationKey:'c',taskId:'task',sessionId:'session-main',agentId:'session-main',agentRole:'main',approvalPolicy:input.sandboxMode==='danger-full-access'?'never':'ask',workspace:input.workspace,sandboxMode:input.sandboxMode ?? 'workspace-write',verified:true});}
 function output(workspace){return Buffer.from(JSON.stringify({type:'session',sessionId:'session-main',cwd:workspace})+'\n'+JSON.stringify({type:'final',text:'answer'})+'\n');}
 test('runner uses the exact resolved launcher, environment, home and immutable profile throughout',async t=> {
- const f=runnerFixture(t);let session;const input={...f.input,onSession:id=>session=id};input.superviseImpl=async options=>{assert.equal(options.command,input.runtime.launcher.command);assert.equal(options.env.DSH_HOME,input.runtime.home);assert.equal(options.env.CODEX_DSH_MCP_WORKSPACE,input.workspace);assert.ok(options.args.includes('verified-fake-profile'));proof(input);options.onStarted({pid:process.pid,supervision:'stub'});options.onStdout(output(f.input.workspace));return {code:0,treeExited:true};};
+ const f=runnerFixture(t);let session;const input={...f.input,onSession:id=>session=id};input.superviseImpl=async options=>{assert.equal(options.command,input.runtime.launcher.command);assert.equal(options.env.DSH_HOME,input.runtime.home);assert.equal(options.env.DSH_MCP_WORKSPACE,input.workspace);assert.ok(options.args.includes('verified-fake-profile'));proof(input);options.onStarted({pid:process.pid,supervision:'stub'});options.onStdout(output(f.input.workspace));return {code:0,treeExited:true};};
  const value=await runTask(input);assert.equal(value.state,'completed');assert.equal(session,'session-main');assert.equal(value.reports,undefined);assert.equal(value.answer,'answer');
 });
 test('cancelled before preparation or expired acceptance deadline never spawns or provisions',async t=> {
@@ -46,7 +46,7 @@ test('failed report persistence yields a tool error and releases every controlle
   fs.openSync=function(file,flags,...args){const fd=open.call(this,file,flags,...args);if(typeof file==='string'&&file.endsWith('reports.ndjson')&&flags==='a')bad.add(fd);return fd;};
   fs.writeFileSync=function(file,...args){if(bad.has(file))throw Object.assign(new Error('disk full'),{code:'ENOSPC'});return write.call(this,file,...args);};
   fs.closeSync=function(fd){bad.delete(fd);return close.call(this,fd);};
-  const task=await call(b.client,'dsh_task',{prompt:'disk failure'});assert.equal(task.isError,true);assert.equal(task.structuredContent.state,'failed');assert.equal(b.registry.current().controllers.size,0);
+  const task=await call(b.client,'dsh_task',{prompt:'disk failure'});assert.equal(task.isError,true);assert.equal(task.structuredContent.state,'failed');assert.equal([...b.manager.contexts.values()].reduce((sum,c)=>sum+c.controllers.size,0),0);
  }finally{fs.openSync=open;fs.writeFileSync=write;fs.closeSync=close;await b?.close();temp.cleanup();}
 });
 test('crash after confirmation journal but before ACK redelivers, never loses a guidance batch',t=> {
@@ -71,6 +71,6 @@ test('terminal task-record write failure returns a real failure instead of a sta
   b=await connect({env:isolatedEnv(temp.dir),stateRoot:path.join(temp.dir,'state'),defaultWorkspace:temp.dir,runTaskImpl:async input=>result(input)});
   fs.renameSync=function(source,dest){if(typeof dest==='string'&&dest.endsWith('task.json')){const value=JSON.parse(fs.readFileSync(source,'utf8'));if(['completed','failed','timeout','cancelled','interrupted'].includes(value.state))throw Object.assign(new Error('cannot persist terminal record'),{code:'EIO'});}return rename.call(this,source,dest);};
   const task=await call(b.client,'dsh_task',{prompt:'metadata write failure'});assert.equal(task.isError,true);assert.equal(task.structuredContent.state,'failed');assert.equal(task.structuredContent.error.code,'STATE_WRITE_FAILED');
-  const status=await call(b.client,'dsh_status',{task_id:task.structuredContent.task_id});assert.notEqual(status.isError,true);assert.equal(status.structuredContent.state,'failed');assert.equal(status.structuredContent.error.code,'STATE_WRITE_FAILED');assert.equal(b.scheduler.jobs.size,0);assert.equal(b.registry.current().controllers.size,0);
+  const status=await call(b.client,'dsh_status',{task_id:task.structuredContent.task_id});assert.notEqual(status.isError,true);assert.equal(status.structuredContent.state,'failed');assert.equal(status.structuredContent.error.code,'STATE_WRITE_FAILED');assert.equal(b.scheduler.jobs.size,0);assert.equal([...b.manager.contexts.values()].reduce((sum,c)=>sum+c.controllers.size,0),0);
  }finally{fs.renameSync=rename;await b?.close();temp.cleanup();}
 });

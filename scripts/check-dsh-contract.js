@@ -6,7 +6,7 @@ import { resolveRuntime, assertCompatibleRuntime } from '../lib/dsh-profile.js';
 import { supervise } from '../lib/supervisor.js';
 import { repoRoot } from '../lib/paths.js';
 const runtime=resolveRuntime();assertCompatibleRuntime(runtime);if(!runtime.launcher.archive)throw new Error('This probe needs an installed desktop ASAR.');
-const tempBase=path.resolve(os.tmpdir()),sandbox=fs.mkdtempSync(path.join(tempBase,'codex-dsh-contract-'));
+const tempBase=path.resolve(os.tmpdir()),sandbox=fs.mkdtempSync(path.join(tempBase,'dsh-mcp-contract-'));
 const controller=new AbortController(),timer=setTimeout(()=>controller.abort({kind:'timeout',message:'No-model DSH contract timed out'}),15000);
 const metadata={launcher:runtime.launcher,version:runtime.version,launcherFingerprint:runtime.launcherFingerprint};
 let stdout='',stderr='',treeExited=false;const ownedProcesses=[];
@@ -23,6 +23,6 @@ try {
   throw error;
 } finally {
   clearTimeout(timer);
-  if(path.dirname(path.resolve(sandbox))!==tempBase || !path.basename(sandbox).startsWith('codex-dsh-contract-'))throw new Error('Unsafe cleanup');
+  if(path.dirname(path.resolve(sandbox))!==tempBase || !path.basename(sandbox).startsWith('dsh-mcp-contract-'))throw new Error('Unsafe cleanup');
   if(treeExited)fs.rmSync(sandbox,{recursive:true,force:true});
 }

@@ -16,6 +16,8 @@
  * leaving a guardian that cannot run.
  */
 import fs from 'node:fs';
+import {runtimeEnv} from '../lib/config.js';
+const env=runtimeEnv(process.env);
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { repoRoot } from '../lib/paths.js';
@@ -23,11 +25,11 @@ import { ensureStageDir, placeWithoutLowLabel, verifyGuardianArtifact, guardianE
 
 if (process.platform !== 'win32') { console.log('Windows helper compilation skipped on this platform.'); process.exit(0); }
 const root = repoRoot(), source = path.join(root, 'native', 'windows-job-host.cs'), output = path.join(root, 'native', 'windows-job-host.exe');
-const compiler = process.env.CODEX_DSH_CSC ?? path.join(process.env.WINDIR ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+const compiler = env.DSH_MCP_CSC ?? path.join(process.env.WINDIR ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
 if (!fs.existsSync(compiler)) throw new Error('Windows Job helper requires the .NET Framework compiler or a prebuilt release helper.');
 if (!fs.existsSync(source)) throw new Error('The Windows guardian source is missing: ' + source);
 
-const stage = ensureStageDir(process.argv[2] ?? process.env.CODEX_DSH_MCP_BUILD_STAGE ?? path.join(path.dirname(root), '.codex-dsh-mcp-build'), output);
+const stage = ensureStageDir(process.argv[2] ?? env.DSH_MCP_BUILD_STAGE ?? path.join(path.dirname(root), '.dsh-mcp-build'), output);
 const staged = path.join(stage, 'windows-job-host.exe');
 // The staged path and the placed artifact are one file object after a successful
 // build. Compiling into that path again would overwrite the live guardian in

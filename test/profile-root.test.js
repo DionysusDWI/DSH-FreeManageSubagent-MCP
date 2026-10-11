@@ -13,7 +13,7 @@ const ROOT = "# dsh profile root — an empty entry list. The tree is composed a
 function fixture(t) {
   const temp = tempDir('profile-root'); t.after(temp.cleanup);
   const cli = path.join(temp.dir, 'cli.js'); fs.writeFileSync(cli, '// fixture');
-  const env = isolatedEnv(temp.dir, { DSH_HOME: path.join(temp.dir, 'home'), CODEX_DSH_MCP_DSH: cli });
+  const env = isolatedEnv(temp.dir, { DSH_HOME: path.join(temp.dir, 'home'), DSH_MCP_DSH: cli });
   const runtime = resolveRuntime(env); runtime.version = '0.2.0-rc.2';
   let installs = 0;
   const opts = { env, runtime, allowProvision: true, runDshImpl: async () => {
@@ -45,7 +45,7 @@ test('canonical DSH root bytes and profile-v2 fingerprint are stable over repeat
   const oldConfigs = Object.fromEntries(names.map(n => [n, n === 'cordis.yml' ? '[]\n' : fs.readFileSync(path.join(f.profile.dir, n), 'utf8')]));
   const old = crypto.createHash('sha256').update('profile-v2\0' + f.runtime.launcherFingerprint + '\0' + f.profile.pluginFingerprint + '\0' + JSON.stringify(oldConfigs)).digest('hex');
   assert.notEqual(old, f.profile.fingerprint);
-  const legacy = path.join(f.runtime.home, 'profiles', 'codex-bridge-' + old.slice(0, 24)); fs.mkdirSync(legacy); fs.writeFileSync(path.join(legacy, 'cordis.yml'), ROOT);
+  const legacy = path.join(f.runtime.home, 'profiles', 'dsh-mcp-bridge-' + old.slice(0, 24)); fs.mkdirSync(legacy); fs.writeFileSync(path.join(legacy, 'cordis.yml'), ROOT);
   await ensureBridgeProfile(f.opts); assert.equal(fs.readFileSync(path.join(legacy, 'cordis.yml'), 'utf8'), ROOT);
 });
 test('legacy short root and YAML-equivalent or actual edits are rejected without rewriting', async t => {
@@ -81,13 +81,13 @@ test('missing snapshots need authorization and interrupted managed builds can ex
   const done = await ensureBridgeProfile(f.opts); assert.equal(inspectBridgeProfile(f.opts).ready, true); assert.equal(done.changed, true); assert.equal(f.installs(), 1);
 });
 test('profile integrity is rechecked after waiting for the provisioning lock', async t => {
-  const f = fixture(t), target = profileTarget(f.opts), lock = path.join(f.runtime.home, 'profiles', '.codex-dsh-mcp-provision.lock');
+  const f = fixture(t), target = profileTarget(f.opts), lock = path.join(f.runtime.home, 'profiles', '.dsh-mcp-provision.lock');
   const release = await acquireFileLock(lock); const pending = ensureBridgeProfile(f.opts);
   fs.mkdirSync(target.dir); fs.writeFileSync(path.join(target.dir, '.bridge-profile.json'), '{"user":"human"}'); release();
   await assert.rejects(pending, { code: 'PROFILE_INTEGRITY_FAILED' }); assert.equal(f.installs(), 0);
 });
 test('provisioning cancellation and lock deadlines remain bounded and do not create snapshots', async t => {
-  const f = fixture(t), lock = path.join(f.runtime.home, 'profiles', '.codex-dsh-mcp-provision.lock'), release = await acquireFileLock(lock);
+  const f = fixture(t), lock = path.join(f.runtime.home, 'profiles', '.dsh-mcp-provision.lock'), release = await acquireFileLock(lock);
   try {
     const controller = new AbortController(), reason = new Error('cancelled'); controller.abort(reason);
     await assert.rejects(ensureBridgeProfile({ ...f.opts, signal: controller.signal }), error => error === reason);

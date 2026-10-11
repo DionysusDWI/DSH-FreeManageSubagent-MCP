@@ -9,12 +9,12 @@ import { scanJsonLines, assertOwner, writeJsonAtomic, JsonLineReader } from './i
 import {resultContainsGuidance} from './guidance-result.js';
 import { attributionOf, installPolicyGuard } from './policy.js';
 export { attributionOf } from './policy.js';
-export const name = 'codex-dsh-mcp-plugin';
+export const name = 'dsh-mcp-plugin';
 export const inject = ['tools','agents','sessions','sandboxPolicy','approval','permissionPresets'];
 export const REPORT_KINDS = Object.freeze(['progress','milestone','blocker','decision','final']);
 export function resolveChannel(env) {
-  if (!env.CODEX_DSH_MCP_CHANNEL || !env.CODEX_DSH_MCP_TASK || !env.CODEX_DSH_MCP_CONVERSATION) return null;
-  const channel = { channelPath:path.resolve(env.CODEX_DSH_MCP_CHANNEL), taskId:env.CODEX_DSH_MCP_TASK, conversationKey:env.CODEX_DSH_MCP_CONVERSATION };
+  if (!env.DSH_MCP_CHANNEL || !env.DSH_MCP_TASK || !env.DSH_MCP_SCOPE) return null;
+  const channel = { channelPath:path.resolve(env.DSH_MCP_CHANNEL), taskId:env.DSH_MCP_TASK, conversationKey:env.DSH_MCP_SCOPE };
   if (!channelDescriptor(channel.channelPath,channel)) throw new Error('A matching protocol-v2 channel is required.'); return channel;
 }
 export function renderSteering(messages) {
@@ -22,7 +22,7 @@ export function renderSteering(messages) {
   return 'Guidance receipt: ' + messages.map(m=>m.messageId).join(',') + '\nOperator guidance (stable IDs may repeat after an interrupted delivery; do not repeat completed actions):\n'
     + messages.map(m=>'[' + m.messageId + '] ' + m.text).join('\n');
 }
-export function renderDelivery(facts) { return 'reported to the Codex session that dispatched task ' + facts.taskId + ' from DSH agent ' + facts.agentId; }
+export function renderDelivery(facts) { return 'reported to the MCP controller that dispatched task ' + facts.taskId + ' from DSH agent ' + facts.agentId; }
 function receive(deps, exec) {
   const who = attributionOf(exec,deps.state.mainAgentId);
   if (who.agentRole !== 'main' || who.agentId !== deps.state.mainAgentId) return [];
@@ -32,7 +32,7 @@ function receive(deps, exec) {
   if (messages.length) { deps.pending.set(who.agentId + '/' + callId,{messages,who,callId}); if(deps.pending.size>128) deps.pending.delete(deps.pending.keys().next().value); } return messages;
 }
 export function defineReportTool(deps) {
-  return defineTool({ name:'report', description:'Report substantive progress, milestones, decisions or blockers to the dispatching Codex task. All agents may report; only the main agent receives operator guidance.',
+  return defineTool({ name:'report', description:'Report substantive progress, milestones, decisions or blockers to the dispatching MCP task. All agents may report; only the main agent receives operator guidance.',
     parameters:{text:{type:'string',required:true,description:'The substantive update.'},kind:{type:'string',enum:[...REPORT_KINDS]},data:{type:'json',description:'Optional structured detail.'}},
     output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:String(value)}]},
     async execute(args,exec) {
@@ -54,7 +54,7 @@ function containsReceipt(event,messages,channel) {return resultContainsGuidance(
 export function apply(ctx,config) {
   const env=config?.env ?? process.env, channel=resolveChannel(env);
   if (!channel) throw new Error('Bridge task channel is missing; unverified execution is refused.');
-  const state=installPolicyGuard(ctx,{...channel,dir:path.dirname(channel.channelPath),workspace:env.CODEX_DSH_MCP_WORKSPACE,sandboxMode:env.CODEX_DSH_MCP_SANDBOX,acceptanceEnv:env},{setSandboxMode,setApprovalPolicy});
+  const state=installPolicyGuard(ctx,{...channel,dir:path.dirname(channel.channelPath),workspace:env.DSH_MCP_WORKSPACE,sandboxMode:env.DSH_MCP_SANDBOX,acceptanceEnv:env},{setSandboxMode,setApprovalPolicy});
   const deps={channel,state,pending:new Map()}, dir=path.dirname(channel.channelPath);
   ctx.tools.register(defineReportTool(deps)); ctx.tools.register(defineInboxTool(deps));
   let confirmations=Promise.resolve(), cancelled=false;
@@ -95,11 +95,11 @@ export function apply(ctx,config) {
     if(cancelled) return;
     try {
       const reason=readCancellation(channel.channelPath,channel); if(!reason) return; cancelled=true;
-      for(const agent of state.agents.values()) agent.cancel({kind:'hook',reason:reason.message ?? 'Codex cancelled this task'});
+      for(const agent of state.agents.values()) agent.cancel({kind:'hook',reason:reason.message ?? 'MCP controller cancelled this task'});
       await Promise.all([...state.agents.values()].map(async agent=> { await agent.whenIdle(); if(!await ctx.sessions.flush(agent.session)) throw new Error('Cancellation session flush unavailable'); }));
       await confirmations; writeJsonAtomic(path.join(dir,'cancel-ack.json'),{version:2,...channel,sessionId:state.mainAgentId,flushed:true,ts:Date.now()});
     } catch(error) { fail(error); }
   },100); timer.unref?.();
   ctx.on('dispose',()=>clearInterval(timer));
-  ctx.inject?.(['systemPrompt'],scope=>scope.systemPrompt.context({name:'codex:delegation',order:10000,text:()=> 'This is a Codex-delegated task. Stay within its explicit permission ceiling. report milestones and blockers. Main agent: check_inbox before long or irreversible work; children may report but cannot consume steering. Missing output is not an approval request; never raise access without explicit user authorization.'}));
+  ctx.inject?.(['systemPrompt'],scope=>scope.systemPrompt.context({name:'dsh-mcp:delegation',order:10000,text:()=> 'This is an MCP-delegated DSH task. Stay within its explicit permission ceiling. report milestones and blockers. Main agent: check_inbox before long or irreversible work; children may report but cannot consume steering. Missing output is not an approval request; never raise access without explicit user authorization.'}));
 }

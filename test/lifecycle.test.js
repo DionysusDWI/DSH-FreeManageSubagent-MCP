@@ -13,7 +13,7 @@ const fixture=fileURLToPath(new URL('./fixtures/supervised-bridge.mjs',import.me
 async function tree(t) {
  const {dir,cleanup}=tempDir('stdio-tree');const transport=new StdioClientTransport({command:process.execPath,args:[fixture],cwd:process.cwd(),env:isolatedEnv(dir,{CODEX_DSH_MCP_WORKSPACE:dir}),stderr:'pipe'}),client=new Client({name:'lifecycle-client',version:'1'});let stderr='';transport.stderr.on('data',b=>stderr+=b);
  await client.connect(transport);t.after(async()=>{try{await client.close();}finally{cleanup();}});
- const task=await call(client,'dsh_task',{prompt:'local non-model tree',background:true});let ids;const deadline=Date.now()+5000;
+ const task=await call(client,'dsh_task',{workspace:dir,prompt:'local non-model tree',background:true});let ids;const deadline=Date.now()+5000;
  while(!ids&&Date.now()<deadline) {const status=await call(client,'dsh_status',{task_id:task.structuredContent.task_id,cursor:0,wait_ms:100});ids=status.structuredContent?.reports?.find(r=>r.event_id==='pids')?.data;}
  assert.ok(ids,stderr);return {client,transport,ids,pid:transport.pid};
 }
