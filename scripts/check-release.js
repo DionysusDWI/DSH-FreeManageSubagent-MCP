@@ -5,9 +5,22 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
+import {CallToolResultSchema} from '@modelcontextprotocol/sdk/types.js';
 import {verifyManifest} from './verify-manifest.js';
 import {validatePackage} from './validate-package.js';
 import {readIntegrityLabel} from '../lib/win-integrity.js';
+export async function probeReadOnlyClient(client,{timeout=10000,diagnostics=''}={}) {
+  const tools=await client.listTools({}, {timeout});
+  const names=tools.tools.map(tool=>tool.name).sort();
+  if(JSON.stringify(names)!==JSON.stringify(['dsh_cancel','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']))throw new Error('Packaged MCP tools missing. '+diagnostics);
+  if(tools.tools.filter(tool=>tool.name!=='dsh_self_check').some(tool=>!tool.outputSchema))throw new Error('Packaged outputSchema missing.');
+  // The SDK's second callTool argument is a Zod result schema, not options.
+  const health=await client.callTool({name:'dsh_self_check',arguments:{}},CallToolResultSchema,{timeout});
+  if(health.isError)throw new Error('Packaged self-check failed.');
+  const sessions=await client.callTool({name:'dsh_sessions',arguments:{}},CallToolResultSchema,{timeout});
+  if(sessions.isError||sessions.structuredContent?.sessions?.length!==0)throw new Error('Packaged empty session catalog failed.');
+  return names;
+}
 export async function checkRelease(root) {
   root=path.resolve(root);validatePackage(root);const manifestProof=verifyManifest(root);
   const guardianLabel=readIntegrityLabel(path.join(root,'native','windows-job-host.exe'));
@@ -25,12 +38,8 @@ export async function checkRelease(root) {
     transport=new StdioClientTransport({command:runtime,args:[path.join(isolated,'bin','dsh-mcp.js')],cwd,env,stderr:'pipe'});
     let stderr='';transport.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString('utf8')).slice(-8192);});
     client=new Client({name:'release-no-model-probe',version:'1.0.0'},{capabilities:{}});
-    await client.connect(transport);const tools=await client.listTools({}, {timeout:10000});
-    const names=tools.tools.map(t=>t.name).sort();
-    if(JSON.stringify(names)!==JSON.stringify(['dsh_cancel','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']))throw new Error('Packaged MCP tools missing. '+stderr);
-    if(tools.tools.filter(t=>t.name!=='dsh_self_check').some(t=>!t.outputSchema))throw new Error('Packaged outputSchema missing.');
-    const health=await client.callTool({name:'dsh_self_check',arguments:{}},{}, {timeout:10000});if(health.isError)throw new Error('Packaged self-check failed.');
-    const sessions=await client.callTool({name:'dsh_sessions',arguments:{}},{},{timeout:10000});if(sessions.isError||sessions.structuredContent?.sessions?.length!==0)throw new Error('Packaged empty session catalog failed.');
+    await client.connect(transport);
+    const names=await probeReadOnlyClient(client,{diagnostics:stderr});
     if(fs.existsSync(path.join(scratch,'state')))throw new Error('Read-only protocol checks initialized state.');
     return {manifestProof,externalCwd:true,readOnlyHealth:true,emptyManagedSessions:true,isolatedFromCheckoutDependencies:true,bundledRuntime:true,tools:names,modelCalls:0,guardianImageIntegrity:guardianLabel.level,guardianLabelVerified:guardianLabel.raw==='',runtimeImageIntegrity:runtimeLabel.level,runtimeLabelVerified:runtimeLabel.raw===''};
   } finally {
