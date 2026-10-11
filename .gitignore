@@ -1,0 +1,16 @@
+node_modules/
+npm-debug.log*
+*.local.json
+*.local.log
+_staging/
+dist/
+test/.tmp/
+docs/.doc-cache/
+docs/verification/
+.agents/
+native/windows-job-host.exe
+.env
+.env.*
+*.db
+*.sqlite*
+*.log

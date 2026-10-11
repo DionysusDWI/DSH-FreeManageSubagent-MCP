@@ -1,0 +1,6 @@
+/** Explicit unit-test enumeration; never invokes the separately authorized smoke. */
+import fs from 'node:fs';import path from 'node:path';import {spawn} from 'node:child_process';import {repoRoot} from '../lib/paths.js';
+const tests=['channel.test.js','file-lock.test.js','dsh-stream.test.js','isolation.test.js','mcp-flow.test.js','overlay.test.js','supervisor.test.js','win-integrity.test.js','state-v2.test.js','scheduler.test.js','policy.test.js','runtime-profile.test.js','profile-root.test.js','resume-smoke.test.js','concurrency.test.js','lifecycle.test.js','faults.test.js','package.test.js','acceptance.test.js','joint-acceptance.test.js','smoke4.test.js','host-preflight.test.js'];
+const root=repoRoot(),report=path.join(root,'test','.tmp','unit-results-latest.xml');fs.mkdirSync(path.dirname(report),{recursive:true});
+const child=spawn(process.execPath,['--test','--test-reporter=spec','--test-reporter=junit','--test-reporter-destination=stdout','--test-reporter-destination='+report,...tests.map(file=>path.join(root,'test',file))],{cwd:root,stdio:'inherit',windowsHide:true});
+child.on('error',error=>{console.error(error.message);process.exitCode=1;});child.on('exit',code=>{process.exitCode=code ?? 1;console.log('No-model test report: '+report);});

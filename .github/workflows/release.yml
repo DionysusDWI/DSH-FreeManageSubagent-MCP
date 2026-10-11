@@ -1,0 +1,37 @@
+name: Windows prerelease
+on:
+  push:
+    tags: ['v0.1.1', 'v0.1.2']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/public-files.js
+      - run: npm run build:native
+      - run: npm test
+      - run: npm run validate:package
+      - run: npm run check:guardian
+      - name: Official matching Node license
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force docs/.doc-cache | Out-Null
+          Invoke-WebRequest https://raw.githubusercontent.com/nodejs/node/v24.19.0/LICENSE -OutFile docs/.doc-cache/node-v24.19.0-LICENSE
+      - run: npm run build:release
+      - run: node scripts/release-assets.js
+      - name: Draft, upload, verify and publish prerelease
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/publish-prerelease.js

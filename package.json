@@ -1,0 +1,53 @@
+{
+  "name": "codex-dsh-mcp",
+  "version": "0.1.1",
+  "private": true,
+  "description": "MCP server that lets Codex drive DeepSeek Harness (DSH) as an isolated, self-orchestrating subagent with proactive reporting.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "bin": {
+    "codex-dsh-mcp": "./bin/codex-dsh-mcp.js"
+  },
+  "exports": {
+    ".": "./lib/server.js",
+    "./conversation": "./lib/conversation.js",
+    "./overlay": "./lib/overlay.js",
+    "./stream": "./lib/dsh-stream.js",
+    "./report-queue": "./lib/report-queue.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "dsh-plugin",
+    "docs",
+    "README.md",
+    "native",
+    "scripts",
+    "skills",
+    "plugin.json",
+    "mcp.json",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node ./bin/codex-dsh-mcp.js",
+    "test": "node scripts/test.js",
+    "smoke": "node ./test/smoke.mjs",
+    "bootstrap": "node ./bin/codex-dsh-mcp.js --bootstrap",
+    "build:native": "node scripts/build-native.js",
+    "build:release": "node scripts/build-release.js",
+    "validate:package": "node scripts/validate-package.js",
+    "check:dsh-contract": "node scripts/check-dsh-contract.js",
+    "check:guardian": "node scripts/check-guardian.js",
+    "smoke:resume": "node ./test/resume-smoke.mjs",
+    "joint:acceptance": "node ./test/joint-acceptance.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^4.6.5",
+    "ajv": "^8.20.0"
+  }
+}
