@@ -25,8 +25,22 @@ class JobHost {
     evidence["stage"]=stage; evidence["updatedAt"]=DateTime.UtcNow.ToString("o");
     string target=Path.Combine(evidenceDir,"helper.json"),temp=target+"."+Guid.NewGuid().ToString("N");
     byte[] bytes=new UTF8Encoding(false).GetBytes(serializer.Serialize(evidence));
-    using(var f=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {f.Write(bytes,0,bytes.Length);f.Flush(true);}
-    if(File.Exists(target))File.Replace(temp,target,null);else File.Move(temp,target);
+    WriteDurable(temp,bytes);
+    Check(MoveFileEx(NativePath(temp),NativePath(target),1|8),"Commit supervision evidence");
+  }
+  // .NET Framework path APIs impose MAX_PATH even for valid v3 state paths.
+  // Use extended Win32 paths and a SafeFileHandle without changing OS settings.
+  static string NativePath(string value) {
+    if(value.StartsWith(@"\\?\",StringComparison.Ordinal))return value;
+    if(value.StartsWith(@"\\",StringComparison.Ordinal))return @"\\?\UNC\"+value.Substring(2);
+    if(value.Length>=3 && Char.IsLetter(value[0]) && value[1]==':' && value[2]=='\\')return @"\\?\"+value;
+    throw new ArgumentException("Guardian file paths must be absolute");
+  }
+  static void WriteDurable(string file,byte[] bytes) {
+    using(var handle=CreateFile(NativePath(file),0x40000000,0,IntPtr.Zero,1,0x80,IntPtr.Zero)) {
+      Check(!handle.IsInvalid,"Create supervision file");
+      using(var stream=new FileStream(handle,FileAccess.Write,8192,false)) {stream.Write(bytes,0,bytes.Length);stream.Flush(true);}
+    }
   }
   static void EmptyJob() {
     Check(TerminateJobObject(job,137),"Cleanup descendants");
@@ -52,6 +66,9 @@ class JobHost {
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool CreatePipe(out IntPtr read,out IntPtr write,ref SECURITY_ATTRIBUTES attrs,uint size);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetHandleInformation(IntPtr h,uint mask,uint flags);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern SafeFileHandle CreateFile(string file,uint access,uint sharing,IntPtr security,uint disposition,uint flags,IntPtr template);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool MoveFileEx(string existing,string replacement,uint flags);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool DeleteFile(string file);
   [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(IntPtr h,uint ms);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr p,out uint code);
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcess(string exe,StringBuilder command,IntPtr pa,IntPtr ta,bool inherit,uint flags,IntPtr env,string cwd,ref STARTUPINFOEX startup,out PROCESS_INFORMATION pi);
@@ -89,7 +106,7 @@ class JobHost {
       string exe=(string)request["command"],cwd=(string)request["cwd"];
       if(request.ContainsKey("stateDir")) {
         string stateDir=(string)request["stateDir"],probe=Path.Combine(stateDir,"guardian-write-probe-"+Guid.NewGuid().ToString("N"));
-        try { File.WriteAllText(probe,"guardian write preflight",new UTF8Encoding(false));File.Delete(probe); }
+        try { WriteDurable(probe,new UTF8Encoding(false).GetBytes("guardian write preflight"));Check(DeleteFile(NativePath(probe)),"Delete guardian probe"); }
         catch(Exception error) { throw new Exception("GUARDIAN_STATE_NOT_WRITABLE: guardian cannot write the task state with its current token. No DSH process was launched. Do not auto-elevate; verify the release binary integrity label and explicit user permissions. "+error.Message); }
       }
       IEnumerable args=(IEnumerable)request["args"];
