@@ -17,6 +17,23 @@ class JobHost {
   static readonly object outputLock=new object();
   static JavaScriptSerializer serializer=new JavaScriptSerializer { MaxJsonLength=64*1024*1024 };
   static volatile bool stopping;
+  static string evidenceDir,attemptId,jobId;
+  static Dictionary<string,object> evidence=new Dictionary<string,object>();
+  static void Stage(string stage) {
+    if(evidenceDir==null)return;
+    evidence["version"]=1; evidence["attemptId"]=attemptId; evidence["jobId"]=jobId;
+    evidence["stage"]=stage; evidence["updatedAt"]=DateTime.UtcNow.ToString("o");
+    string target=Path.Combine(evidenceDir,"helper.json"),temp=target+"."+Guid.NewGuid().ToString("N");
+    byte[] bytes=new UTF8Encoding(false).GetBytes(serializer.Serialize(evidence));
+    using(var f=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {f.Write(bytes,0,bytes.Length);f.Flush(true);}
+    if(File.Exists(target))File.Replace(temp,target,null);else File.Move(temp,target);
+  }
+  static void EmptyJob() {
+    Check(TerminateJobObject(job,137),"Cleanup descendants");
+    Stopwatch deadline=Stopwatch.StartNew(); ACCOUNTING account;
+    do { Check(QueryInformationJobObject(job,1,out account,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero),"QueryInformationJobObject"); if(account.activeProcesses==0)break; if(deadline.ElapsedMilliseconds>10000)throw new Exception("Job descendants did not exit"); Thread.Sleep(10); }while(true);
+    evidence["proof"]="job-empty";evidence["activeProcesses"]=0;Stage("job-empty");
+  }
   [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public int length; public IntPtr descriptor; public int inherit; }
   [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct STARTUPINFO { public int cb; public string reserved,desktop,title; public uint x,y,xSize,ySize,xChars,yChars,fill,flags; public ushort show,reserved2; public IntPtr reservedPtr,stdin,stdout,stderr; }
   [StructLayout(LayoutKind.Sequential)] struct STARTUPINFOEX { public STARTUPINFO startup; public IntPtr attributes; }
@@ -64,6 +81,11 @@ class JobHost {
       Console.OutputEncoding=new UTF8Encoding(false); Console.InputEncoding=new UTF8Encoding(false);
       string line=Console.ReadLine(); if(line==null) throw new Exception("No launch request");
       Dictionary<string,object> request=serializer.Deserialize<Dictionary<string,object>>(line);
+      if(request.ContainsKey("supervisionDir")) {
+        evidenceDir=(string)request["supervisionDir"];attemptId=(string)request["attemptId"];jobId=(string)request["jobId"];
+        var self=Process.GetCurrentProcess();evidence["helper"]=new {pid=self.Id,creationTime=self.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()};
+        evidence["childMayExist"]=false; Stage("helper-ready");
+      }
       string exe=(string)request["command"],cwd=(string)request["cwd"];
       if(request.ContainsKey("stateDir")) {
         string stateDir=(string)request["stateDir"],probe=Path.Combine(stateDir,"guardian-write-probe-"+Guid.NewGuid().ToString("N"));
@@ -72,7 +94,7 @@ class JobHost {
       }
       IEnumerable args=(IEnumerable)request["args"];
       Dictionary<string,object> vars=(Dictionary<string,object>)request["env"];
-      job=CreateJobObject(IntPtr.Zero,null); Check(job!=IntPtr.Zero,"CreateJobObject");
+      job=CreateJobObject(IntPtr.Zero,jobId); Check(job!=IntPtr.Zero,"CreateJobObject");
       EXTENDED_LIMIT limit=new EXTENDED_LIMIT(); limit.basic.flags=JOB_KILL_ON_CLOSE;
       Check(SetInformationJobObject(job,9,ref limit,(uint)Marshal.SizeOf(typeof(EXTENDED_LIMIT))),"SetInformationJobObject");
       SECURITY_ATTRIBUTES sa=new SECURITY_ATTRIBUTES(); sa.length=Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)); sa.inherit=1;
@@ -91,25 +113,37 @@ class JobHost {
       List<string> keys=new List<string>(vars.Keys); keys.Sort(StringComparer.OrdinalIgnoreCase);
       StringBuilder block=new StringBuilder(); foreach(string key in keys) { if(key.IndexOf('=')>=0 || key.IndexOf('\0')>=0) throw new Exception("Invalid environment key"); block.Append(key+"="+(string)vars[key]+"\0"); } block.Append('\0');
       env=Marshal.StringToHGlobalUni(block.ToString());
+      evidence["childMayExist"]=true;Stage("creating-suspended-child");
       Check(CreateProcess(exe,command,IntPtr.Zero,IntPtr.Zero,true,CREATE_SUSPENDED|CREATE_UNICODE_ENVIRONMENT|CREATE_NO_WINDOW|0x80000,env,cwd,ref si,out pi),"CreateProcess suspended");
       process=pi.process;
       bool inJob; Check(IsProcessInJob(process,job,out inJob) && inJob,"Atomic job assignment verification"); assigned=true;
+      var leader=Process.GetProcessById((int)pi.pid);
+      evidence["child"]=new {pid=pi.pid,creationTime=leader.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()};Stage("child-created-suspended");
       Check(ResumeThread(pi.thread)!=0xffffffff,"ResumeThread");
       CloseHandle(pi.thread); pi.thread=IntPtr.Zero;
       CloseHandle(outWrite); outWrite=IntPtr.Zero; CloseHandle(errWrite); errWrite=IntPtr.Zero;
       CloseHandle(inRead); inRead=IntPtr.Zero; CloseHandle(inWrite); inWrite=IntPtr.Zero;
+      Stage("running");
       Emit(new { type="started",pid=pi.pid,supervision="windows-job-kill-on-close" });
       Thread stdout=Pump(outRead,"stdout"); outRead=IntPtr.Zero;
       Thread stderr=Pump(errRead,"stderr"); errRead=IntPtr.Zero;
       Thread control=new Thread(()=> { try { string message; while((message=Console.ReadLine())!=null) { Dictionary<string,object> input=serializer.Deserialize<Dictionary<string,object>>(message); if((string)input["type"]=="kill") { Stop(); return; } } Stop(); } catch { Stop(); } }); control.IsBackground=true; control.Start();
       Check(WaitForSingleObject(process,0xffffffff)==0,"WaitForSingleObject"); uint code; Check(GetExitCodeProcess(process,out code),"GetExitCodeProcess");
       // A settled leader is not sufficient: force any lingering descendants and confirm an empty job.
-      Check(TerminateJobObject(job,137),"Cleanup descendants");
-      Stopwatch deadline=Stopwatch.StartNew(); ACCOUNTING account;
-      do { Check(QueryInformationJobObject(job,1,out account,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero),"QueryInformationJobObject"); if(account.activeProcesses==0) break; if(deadline.ElapsedMilliseconds>10000) throw new Exception("Job descendants did not exit"); Thread.Sleep(10); } while(true);
+      evidence["exitCode"]=unchecked((int)code); EmptyJob();
       if(!stdout.Join(5000) || !stderr.Join(5000)) throw new Exception("Pipe relay did not finish");
       Emit(new { type="exit",code=unchecked((int)code),terminated=stopping,treeExited=true }); return 0;
-    } catch(Exception e) { try { Emit(new { type="error",message=e.Message,code=e.Message.StartsWith("GUARDIAN_STATE_NOT_WRITABLE")?"GUARDIAN_STATE_NOT_WRITABLE":"GUARDIAN_LAUNCH_FAILED" }); if(pi.process==IntPtr.Zero) Emit(new { type="exit",code=1,treeExited=true,launchRefused=true }); } catch {} return 1; }
+    } catch(Exception e) {
+      bool confirmed=false;
+      try {
+        evidence["firstError"]=e.Message;
+        if(pi.process==IntPtr.Zero) {evidence["childMayExist"]=false;evidence["proof"]="not-started";evidence["exitCode"]=1;Stage("not-started");confirmed=true;}
+        else if(assigned) { evidence["exitCode"]=1;EmptyJob();confirmed=true; }
+        else {Check(TerminateProcess(pi.process,137),"Terminate unassigned child");Check(WaitForSingleObject(pi.process,10000)==0,"Wait unassigned child");evidence["exitCode"]=1;EmptyJob();confirmed=true;}
+      } catch(Exception cleanup) {try{evidence["cleanupError"]=cleanup.Message;Stage("exit-unconfirmed");}catch{} }
+      try { Emit(new { type="error",message=e.Message,code=e.Message.StartsWith("GUARDIAN_STATE_NOT_WRITABLE")?"GUARDIAN_STATE_NOT_WRITABLE":"GUARDIAN_LAUNCH_FAILED" });Emit(new {type="exit",code=1,treeExited=confirmed,launchRefused=pi.process==IntPtr.Zero}); }catch{}
+      return 1;
+    }
     finally {
       if(pi.process!=IntPtr.Zero && !assigned) TerminateProcess(pi.process,137);
       if(job!=IntPtr.Zero) CloseHandle(job);

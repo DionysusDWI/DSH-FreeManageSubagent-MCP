@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp-plugin",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "DSH-side durable reporting, guidance and permission ceiling for the generic dsh-mcp bridge.",
   "type": "module",

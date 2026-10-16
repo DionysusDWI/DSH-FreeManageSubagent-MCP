@@ -15,7 +15,7 @@ if(process.platform!=='win32')throw new Error('This candidate packages the Windo
 const root=repoRoot(),dist=path.join(root,'dist'),pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 if(process.version!=='v24.19.0'||process.arch!=='x64')throw new Error('Release requires Node 24.19.0 Windows x64.');
 const sourceCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
-if(execFileSync('git',['status','--porcelain','--untracked-files=no'],{cwd:root,encoding:'utf8'}).trim())throw new Error('Commit public source changes before packaging.');
+if(execFileSync('git',['status','--porcelain','--untracked-files=all'],{cwd:root,encoding:'utf8'}).trim())throw new Error('Commit public source changes before packaging.');
 scanPublicFiles(root);validatePackage(root);fs.mkdirSync(dist,{recursive:true});
 const helper=path.join(root,'native','windows-job-host.exe'),source=path.join(root,'native','windows-job-host.cs');
 if(!fs.existsSync(helper)||fs.statSync(helper).mtimeMs<fs.statSync(source).mtimeMs)throw new Error('Run npm run build:native before packaging; missing/stale guardian is refused.');

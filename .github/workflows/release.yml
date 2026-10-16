@@ -1,33 +1,45 @@
 name: Windows prerelease
 on:
-  push:
-    tags: ['v0.1.1', 'v0.1.2']
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish a new prerelease after validation (refuse existing releases)
-        type: boolean
-        required: false
-        default: false
+      operation:
+        description: Prepare an immutable candidate or publish an accepted artifact
+        type: choice
+        options: [prepare, publish]
+        default: prepare
+        required: true
+      candidate_run_id:
+        description: Successful prepare run ID (publish only)
+        type: string
+      candidate_artifact_id:
+        description: Exact artifact ID (publish only)
+        type: string
+      expected_zip_sha256:
+        description: Accepted runtime ZIP SHA-256 (publish only)
+        type: string
+      acceptance_base64:
+        description: Base64 sanitized host acceptance JSON (publish only)
+        type: string
 permissions:
-  contents: write
+  contents: read
+  actions: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: v013-${{ inputs.operation }}
   cancel-in-progress: false
 jobs:
-  release:
+  prepare:
+    if: inputs.operation == 'prepare'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          # Checkout the immutable event commit so annotated tag refs stay intact.
           ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '24.19.0'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: node scripts/public-files.js
       - run: npm run build:native
       - run: npm test
@@ -40,8 +52,45 @@ jobs:
           Invoke-WebRequest https://raw.githubusercontent.com/nodejs/node/v24.19.0/LICENSE -OutFile docs/.doc-cache/node-v24.19.0-LICENSE
       - run: npm run build:release
       - run: node scripts/release-assets.js
-      - name: Draft, upload, verify and publish prerelease
-        if: github.event_name == 'push' || inputs.publish == true
+      - run: node scripts/candidate.js dist/public-v0.1.3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        id: candidate
+        with:
+          name: v0.1.3-candidate
+          path: dist/public-v0.1.3/*
+          if-no-files-found: error
+          retention-days: 30
+      - shell: pwsh
+        run: |
+          "Candidate artifact ID: ${{ steps.candidate.outputs.artifact-id }}" >> $env:GITHUB_STEP_SUMMARY
+          "Artifact digest: ${{ steps.candidate.outputs.artifact-digest }}" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content dist/public-v0.1.3/candidate.json >> $env:GITHUB_STEP_SUMMARY
+  publish:
+    if: inputs.operation == 'publish'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.19.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093a
+        with:
+          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: promoted
+          merge-multiple: true
+      - name: Verify provenance, upload exact candidate and publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-prerelease.js
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          EXPECTED_ZIP_SHA256: ${{ inputs.expected_zip_sha256 }}
+          ACCEPTANCE_BASE64: ${{ inputs.acceptance_base64 }}
+        run: node scripts/publish-prerelease.js promoted

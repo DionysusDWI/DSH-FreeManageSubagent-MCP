@@ -1,8 +1,8 @@
-# dsh-mcp 0.1.2
+# dsh-mcp 0.1.3
 
 通用本地 stdio MCP 服务，用 DSH Desktop 执行经授权的任务，保留原生会话、持久报告、指导确认、权限上限和受监督取消。各类可信本地 harness 均可使用标准 MCP；本版不依赖 Codex 插件、聊天身份或插件环境变量。
 
-**Windows x64 预发布，DSH Desktop 唯一兼容基线为 0.2.0-rc.2。** 无 npm 发布。付费模型、具体客户端产品和非 Windows 平台尚未验收；协议测试使用标准 MCP SDK 客户端。
+**Windows x64 预发布，DSH Desktop 唯一兼容基线为 0.2.0-rc.2。** 无 npm 发布。协议测试使用标准 MCP SDK 客户端；本机唯一最小模型任务的结果以候选绑定的 host-acceptance.json 为准。模型语义能力、音频业务和非 Windows 平台不在验收范围内。
 
 下载对应 GitHub prerelease 的自包含 ZIP，校验 SHA256SUMS 后解压到固定安装目录。包中包含 Node 24.19.0、锁定依赖、Windows Job Object guardian、第三方许可证、文件 manifest 和脱敏测试摘要。无需系统 Node；DSH Desktop 仍需独立安装。
 
@@ -23,7 +23,7 @@
 .\runtime\node.exe .\bin\dsh-mcp.js bootstrap
 ~~~
 
-本次发布未在用户 DSH_HOME 执行 bootstrap。旧 profiles 保持原样；旧 Codex profile 不会自动变成新版 ready profile。没有授权的模型费用或 workspace 访问时不要调用 dsh_task。
+安装验收如需新 profile，应显式执行 bootstrap 并保存本机回执。旧 profiles 保持原样；旧 Codex profile 不会自动变成新版 ready profile。没有授权的模型费用或 workspace 访问时不要调用 dsh_task。
 
 | 工具 | 参数与用途 |
 | --- | --- |
@@ -32,6 +32,8 @@
 | dsh_steer | task_id、message 必填；返回 message_id 表示持久排队，实际 ACK 须有 DSH 成功工具结果与持久化证明 |
 | dsh_cancel | task_id 必填；只有受管进程树退出确认才返回 cancelled |
 | dsh_self_check | 只读诊断配置、DSH、profile、状态和监督准备条件 |
+| dsh_quarantine_status | task_id；只读查看隔离范围、证据和快照摘要 |
+| dsh_quarantine_release | task_id、expected_digest、reason；仅凭匹配的退出证据释放，人工声明仅限 CLI |
 | dsh_sessions | 无 session_id 列管理会话，提供则列该会话任务元数据；不透明 cursor、默认 50/最大 200；不返回聊天正文 |
 
 新任务取得真实 DSH session ID 前返回 null。省略 session_id 总是新建，不会续接最近会话。new_session 已弃用：true 不得与 session_id 同用，false 必须提供 session_id。status、steer、cancel 不再选择最近任务；这些是明确的升级接口变化。
@@ -47,3 +49,5 @@ DSH_MCP_NAMESPACE 默认 local。相同部署命名空间的可信主控共享�
 源码开发使用 Node 24.19.0：npm ci、npm run build:native、npm test、npm run validate:package、npm run check:guardian。npm run check:dsh-contract 需要安装 DSH Desktop，仅用隔离临时目录核验真实 SDK，无模型请求。npm run build:release 要求干净已提交源码及对应官方 Node LICENSE。
 
 [验证范围](docs/public/v0.1.2-verification.md) · [发行说明](docs/releases/v0.1.2.md)。机器原始证据、收费账本、真实会话、旧候选和 credentials 均不进入源码或发布包。历史四次收费验收仍为 **0/4**，不自动消费、不重置、不能绑定新版候选复用。MIT；原署名和代码贡献者声明保留。
+
+升级与恢复见 [v0.1.3 升级说明](docs/public/upgrade-0.1.3.md)，监督记录见 [证据机制](docs/public/supervision-0.1.3.md)。`test-summary.json` 保持零模型含义；唯一真实任务的本机结果由独立 `host-acceptance.json` 绑定候选。Actions 先 prepare，再验收，再 publish 相同 ZIP；晋级不重建。

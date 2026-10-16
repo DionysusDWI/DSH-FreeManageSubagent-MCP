@@ -7,7 +7,7 @@ test('every whitelisted legacy alias conflicts rather than silently overwriting'
 test('fresh state defaults to dsh-mcp and namespaces are case-sensitive configuration',()=>{assert.match(stateRoot({LOCALAPPDATA:path.join(repoRoot(),'test','.tmp')}),/[\\/]dsh-mcp[\\/]state$/);assert.equal(deploymentNamespace({}),'local');assert.equal(deploymentNamespace({DSH_MCP_NAMESPACE:'MixedCase'}),'MixedCase');for(const name of ['', '../escape','x/y','a'.repeat(129)])assert.throws(()=>deploymentNamespace({DSH_MCP_NAMESPACE:name}));});
 test('configuration is output-only, absolute and contains no plugin variables',t=>{const f=tempDir('config-only');t.after(f.cleanup);const env={DSH_MCP_STATE:path.join(f.dir,'does-not-exist'),DSH_MCP_NAMESPACE:'configured'};const server=JSON.parse(clientConfiguration({env,format:'server-json'}));assert.ok(path.isAbsolute(server.command));assert.ok(path.isAbsolute(server.args[0]));assert.equal(server.env.DSH_MCP_NAMESPACE,'configured');assert.equal(fs.existsSync(env.DSH_MCP_STATE),false);assert.equal(JSON.parse(clientConfiguration({env,format:'mcp-json'})).mcpServers['dsh-mcp'].command,server.command);const toml=clientConfiguration({env,format:'toml'});assert.match(toml,/\[mcp_servers."dsh-mcp"\]/);assert.doesNotMatch(toml,/PLUGIN_|CODEX_DSH|multiplex/i);assert.throws(()=>clientConfiguration({env,format:'unknown'}));});
 test('self-contained config uses its actual bundled absolute runtime',t=>{const f=tempDir('config-package');t.after(f.cleanup);fs.mkdirSync(path.join(f.dir,'bin'));fs.mkdirSync(path.join(f.dir,'runtime'));fs.writeFileSync(path.join(f.dir,'bin','dsh-mcp.js'),'');const runtime=path.join(f.dir,'runtime',process.platform==='win32'?'node.exe':'node');fs.writeFileSync(runtime,'');assert.equal(JSON.parse(clientConfiguration({root:f.dir,env:{},format:'server-json'})).command,fs.realpathSync.native(runtime));});
-test('deprecated CLI warns on stderr only; version stdout remains valid',()=>{const result=spawnSync(process.execPath,[path.join(repoRoot(),'bin','codex-dsh-mcp.js'),'--version'],{encoding:'utf8',windowsHide:true});assert.equal(result.status,0);assert.equal(result.stdout.trim(),'0.1.2');assert.match(result.stderr,/deprecated/);});
+test('deprecated CLI warns on stderr only; version stdout remains valid',()=>{const result=spawnSync(process.execPath,[path.join(repoRoot(),'bin','codex-dsh-mcp.js'),'--version'],{encoding:'utf8',windowsHide:true});assert.equal(result.status,0);assert.equal(result.stdout.trim(),'0.1.3');assert.match(result.stderr,/deprecated/);});
 test('legacy auto-provision flag cannot initialize a profile through diagnosis',t=>{const f=tempDir('diagnose-only');t.after(f.cleanup);const env={...process.env,DSH_HOME:path.join(f.dir,'new-home'),DSH_MCP_STATE:path.join(f.dir,'state'),CODEX_DSH_MCP_ALLOW_PROVISION:'1'};delete env.CODEX_DSH_MCP_STATE;const result=spawnSync(process.execPath,[path.join(repoRoot(),'bin','dsh-mcp.js'),'diagnose'],{encoding:'utf8',env,windowsHide:true});assert.equal(fs.existsSync(env.DSH_HOME),false);assert.equal(fs.existsSync(env.DSH_MCP_STATE),false);if(result.status===0)assert.equal(JSON.parse(result.stdout).automaticProvisioning,false);});
 test('source allowlist excludes raw evidence, controls, binaries, databases and candidates',()=>{for(const rel of ['docs/verification/secret.json','docs/.doc-cache/cache.txt','dist/candidate.zip','.agents/plugins/marketplace.json','native/windows-job-host.exe','node_modules/a/index.js','test/.tmp/state.json','.env','credentials.db','lib/secret.local.json','scripts/machine.json'])assert.equal(isPublicSource(rel),false,rel);assert.equal(isPublicSource('lib/server.js'),true);assert.equal(isPublicSource('test/generic-mcp.test.js'),true);assert.equal(scanPublicFiles(repoRoot()).secretScan,'passed');const files=publicPackageFiles(repoRoot());for(const legacy of ['lib/conversation.js','lib/acceptance.js','lib/host-preflight.js','skills/dsh-setup/SKILL.md','test/joint-acceptance.mjs'])assert.equal(files.includes(legacy),false);});
 test('public scanner refuses secret material and machine evidence even in an allowed file',t=>{const f=tempDir('public-scan');t.after(f.cleanup);fs.writeFileSync(path.join(f.dir,'README.md'),'-----BEGIN '+'PRIVATE KEY-----');assert.throws(()=>scanPublicFiles(f.dir),/private key/);fs.writeFileSync(path.join(f.dir,'README.md'),'ghp_'+'a'.repeat(36));assert.throws(()=>scanPublicFiles(f.dir),/credential token/);});
@@ -17,18 +17,22 @@ test('release probe uses valid SDK result schemas and never initializes state',a
   const f=tempDir('release-probe-sdk');
   const bridge=await connect({env:isolatedEnv(f.dir),stateRoot:path.join(f.dir,'state'),defaultWorkspace:f.dir,runTaskImpl:async()=>{throw new Error('Read-only release probe must not run a task.');}});
   t.after(async()=>{await bridge.close();f.cleanup();});
-  assert.deepEqual(await probeReadOnlyClient(bridge.client,{timeout:3000}),['dsh_cancel','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']);
+  assert.deepEqual(await probeReadOnlyClient(bridge.client,{timeout:3000}),['dsh_cancel','dsh_quarantine_release','dsh_quarantine_status','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']);
   assert.equal(fs.existsSync(path.join(f.dir,'state')),false);
 });
 
-test('release checkout preserves annotated refs and manual validation cannot publish by default',async()=>{
+test('release prepares by default and promotion downloads accepted bytes without rebuilding',async()=>{
   const yaml=await import('js-yaml');
   const workflow=yaml.load(fs.readFileSync(path.join(repoRoot(),'.github','workflows','release.yml'),'utf8'));
-  const steps=workflow.jobs.release.steps;
-  const checkout=steps.find(step=>step.uses?.startsWith('actions/checkout@'));
-  assert.equal(checkout.with.ref,'${{ github.sha }}');
-  assert.equal(checkout.with['fetch-depth'],0);
-  assert.equal(workflow.on.workflow_dispatch.inputs.publish.type,'boolean');
-  assert.equal(workflow.on.workflow_dispatch.inputs.publish.default,false);
-  assert.equal(steps.find(step=>step.name==='Draft, upload, verify and publish prerelease').if,"github.event_name == 'push' || inputs.publish == true");
+  for(const job of Object.values(workflow.jobs)){
+    const checkout=job.steps.find(step=>step.uses?.startsWith('actions/checkout@'));
+    assert.equal(checkout.with.ref,'${{ github.sha }}');assert.equal(checkout.with['fetch-depth'],0);
+  }
+  assert.equal(workflow.on.workflow_dispatch.inputs.operation.default,'prepare');
+  assert.equal(workflow.jobs.prepare.if,"inputs.operation == 'prepare'");
+  assert.equal(workflow.jobs.publish.if,"inputs.operation == 'publish'");
+  assert.equal(workflow.on.push,undefined);
+  assert.ok(workflow.jobs.prepare.steps.some(s=>s.uses?.startsWith('actions/upload-artifact@')));
+  assert.ok(workflow.jobs.publish.steps.some(s=>s.uses?.startsWith('actions/download-artifact@')));
+  assert.equal(workflow.jobs.publish.steps.some(s=>/npm ci|build:release|release-assets/.test(s.run??'')),false);
 });

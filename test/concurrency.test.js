@@ -53,14 +53,14 @@ test('concurrent guidance appenders assign unique monotonic sequences without re
 test('unconfirmed termination keeps a durable write quarantine while any monitored PID is alive',async t=> {
  const dir=root(t,'quarantine-write'),stateRoot=path.join(dir,'state');
  const release=await acquireWorkspaceLock({stateRoot,workspace:dir,mode:'workspace-write',taskId:'unknown',conversationKey:'a'});release.quarantine([process.pid]);
- await assert.rejects(acquireWorkspaceLock({stateRoot,workspace:dir,mode:'workspace-write',taskId:'next',conversationKey:'b',deadline:Date.now()+80}),e=>e.kind==='timeout');
- const readRelease=await acquireWorkspaceLock({stateRoot,workspace:dir,mode:'read-only',taskId:'read',conversationKey:'b'});readRelease();
+ await assert.rejects(acquireWorkspaceLock({stateRoot,workspace:dir,mode:'workspace-write',taskId:'next',conversationKey:'b',deadline:Date.now()+80}),e=>e.kind==='timeout'||e.code==='WORKSPACE_QUARANTINED');
+ await assert.rejects(acquireWorkspaceLock({stateRoot,workspace:dir,mode:'read-only',taskId:'read',conversationKey:'b'}),{code:'WORKSPACE_QUARANTINED'});
  assert.ok(fs.readdirSync(path.join(stateRoot,'_locks','workspaces')).some(name=>name.endsWith('.json')));
 });
 test('crashed active claims without known child PIDs are quarantined, not silently reclaimed',async t=> {
  const dir=root(t,'unknown-crash-lock'),stateRoot=path.join(dir,'state'),locks=path.join(stateRoot,'_locks','workspaces');fs.mkdirSync(locks,{recursive:true});
  const gone=spawnSync(process.execPath,['-e',''],{windowsHide:true});assert.ifError(gone.error);
  const file=path.join(locks,'orphan.json');fs.writeFileSync(file,JSON.stringify({version:1,token:'orphan',pid:gone.pid,workspace:canonicalWorkspace(dir),mode:'workspace-write',taskId:'old',conversationKey:'a',createdAt:1,state:'active'}));
- await assert.rejects(acquireWorkspaceLock({stateRoot,workspace:dir,mode:'workspace-write',taskId:'next',conversationKey:'b',deadline:Date.now()+80}),e=>e.kind==='timeout');
- assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).state,'quarantined');
+ await assert.rejects(acquireWorkspaceLock({stateRoot,workspace:dir,mode:'workspace-write',taskId:'next',conversationKey:'b',deadline:Date.now()+80}),e=>e.kind==='timeout'||e.code==='WORKSPACE_QUARANTINED');
+ assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).state,'active');
 });
