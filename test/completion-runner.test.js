@@ -87,7 +87,9 @@ test('standalone supervisor retains IPC without an unrelated timer or server han
   `;
   const {stdout, stderr} = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
     cwd:temp.dir, windowsHide:true, timeout:20000,
-    env:process.env.SystemRoot ? {SystemRoot:process.env.SystemRoot} : {},
+    // This process also runs real OS identity queries. Preserve the normal
+    // Windows PATH/module/temp setup; this is not an environment-isolation test.
+    env:process.env,
   });
   assert.equal(stdout.trim(), 'STANDALONE_DRAIN_OK');
   assert.equal(stderr, '');
