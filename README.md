@@ -53,3 +53,8 @@ DSH_MCP_NAMESPACE 默认 local。相同部署命名空间的可信主控共享�
 [验证范围](docs/public/v0.1.2-verification.md) · [发行说明](docs/releases/v0.1.2.md)。机器原始证据、收费账本、真实会话、旧候选和 credentials 均不进入源码或发布包。历史四次收费验收仍为 **0/4**，不自动消费、不重置、不能绑定新版候选复用。MIT；原署名和代码贡献者声明保留。
 
 升级与恢复见 [v0.1.3 升级说明](docs/public/upgrade-0.1.3.md)，监督记录见 [证据机制](docs/public/supervision-0.1.3.md)。`test-summary.json` 保持零模型含义；唯一真实任务的本机结果由独立 `host-acceptance.json` 绑定候选。Actions 先 prepare，再验收，再 publish 相同 ZIP；晋级不重建。
+
+
+### v0.1.3 completion relay correction
+
+The corrected same-version candidate waits for worker IPC and stdio to drain before task settlement. A zero process exit and bounded progress are still insufficient without the lossless final event. See [completion correction](docs/public/completion-0.1.3.md) and verify the release manifest fingerprint when upgrading an existing v0.1.3 installation.

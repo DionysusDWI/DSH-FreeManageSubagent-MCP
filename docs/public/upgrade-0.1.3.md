@@ -34,3 +34,10 @@ The corrected candidate remains version 0.1.3; identify it by source commit, pac
 When a task fails with `MISSING_CREDENTIAL`, compare the environment of the bridge process, not just a current terminal. Restarting a terminal cannot change an existing bridge's environment. Use `diagnose` or `dsh_self_check`; `ready=true` covers profile content only. The bridge default official route need not match the manual Desktop account route. Do not silently change that route to make a test pass.
 
 For an explicitly configured Windows User credential, enable `DSH_MCP_CREDENTIAL_ENV_SOURCE=windows-user` and `DSH_MCP_CREDENTIAL_ENV_REFS=DEEPSEEK_API_KEY` in the MCP server configuration, without adding the key value. Drain old tasks, stop old bridges, then reconnect. Process values still win, including an intentionally empty value. Review the credential precedence and no-model resolver check in `configuration.md`. Confirm presence/resolution before any separately authorized model task. Preserve the failed task and its actual tree-exit evidence; never retry it automatically or record infrastructure failure as model accuracy.
+
+
+## Completion-corrected same-version package
+
+Version 0.1.3 alone does not identify the corrected package. Verify the source commit, package fingerprint and runtime ZIP SHA-256 against the new release manifest. Drain and stop every old bridge that uses the installation before replacing its files. Do not replace code under an active bridge. This correction does not change the DSH plugin, so an unchanged immutable profile can be retained after its content is verified.
+
+Keep earlier failed task records and logs. Do not turn them into completed tasks from truncated progress text or synthesize a missing final event. New executions use the relay-close barrier described in `completion-0.1.3.md`. A prior smoke receipt applies only to its original candidate.

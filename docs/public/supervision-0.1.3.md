@@ -11,3 +11,10 @@ Both normal and exceptional helper completion terminate managed descendants and 
 Startup handshake defaults to 15 seconds and is bounded by the task's total deadline. Cancellation, EOF and IPC loss stop the managed tree. A failed state write before authorization refuses launch. Quarantine is checked before allocating a new scope and again under the registry lock immediately before final authorization.
 
 Read-only execution also carries a durable registry claim so an abandoned launch cannot escape workspace protection. Active read-only claims retain concurrent execution semantics. Unresolved claims/quarantines block overlapping work in every mode and all full-access work under the same state root, across namespaces.
+
+
+## Output-drain barrier
+
+A process exit is not an output-drain proof. The bridge keeps IPC referenced and waits for worker stdio and IPC closure before flushing the task parser, deriving its outcome and closing task logs. Separate `worker-exited` and `relay-closed` diagnostic stages identify these boundaries. An explicit parent-side disconnect also waits for process exit, IPC disconnect and stderr close, even when Node omits the combined ChildProcess `close` event. Callback errors during drain retain their original code and reject the execution.
+
+A zero exit code without the lossless DSH `final` event remains a failure. Truncated `text` progress, an empty Job and an earlier successful task do not substitute for completion. See `completion-0.1.3.md` for the same-version correction and regression boundaries.
