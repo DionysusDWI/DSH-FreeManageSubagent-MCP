@@ -17,6 +17,8 @@
 
 配置生成只输出配置，不修改客户端。输出含实际安装目录的绝对运行路径，可粘贴到 CC Switch 的独立 MCP 管理界面或其他客户端；需由客户端重新连接。移动安装目录后重新生成。客户端 RPC 期限应大于 30 秒等待窗口；如需要，客户端自己的 timeout 配置应按其文档设置。
 
+**凭据与路由：** `profile ready=true` 只证明 profile 内容匹配，不证明凭据或 API 授权可用。桥的默认路由是 `deepseek-official / deepseek-flash`，不跟随手动 Desktop profile。若现有桥进程未继承 Windows 用户凭据，可显式生成 `config --format toml --credential-env-source windows-user --credential-env-refs DEEPSEEK_API_KEY`；输出只含来源和变量名，不含密钥。默认仍只用进程环境，不自动换供应商。配置后须重连；凭据优先级、诊断边界和零模型解析检查见[部署说明](docs/public/configuration.md#credentials-and-default-routing)。同为 v0.1.3 的候选须用提交和 ZIP 指纹区分。
+
 启动、自检、配置生成都不会初始化 profile。**bootstrap 是独立显式操作**，会在 DSH_HOME 下创建新的不可变指纹 profile、安装 DSH 执行插件并可能访问网络：
 
 ~~~powershell

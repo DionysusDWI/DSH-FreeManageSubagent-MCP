@@ -128,5 +128,37 @@ assert.equal(mockInstalls,1);
 const profilePreparation={profile:profileSnapshot.name,fingerprint:profileSnapshot.fingerprint,isolatedHome:true,realPrepareCalls:2,results:prepareResults,mockInstallation:true,realPluginInstallCalls:0,runProfileCalls:0,modelCalls:0};
 const {verifyNativeSessions}=await import('../lib/session-verify.js');
 const nativeSessionVerification=await verifyNativeSessions({runtime:probeRuntime,env:probeRuntime.env,sessionRoot:path.join(sandbox,'sessions'),sessions:[{sessionId:session.id,workspace:sandbox}]});
-console.log(JSON.stringify({nativeSessionVerification,persistedRestore:true,fileReadOnlyDenied:true,fileWorkspaceWriteAllowed:true,baseline:'0.2.0-rc.2',mainMode:ctx.sandboxPolicy.resolve({session}).mode,mainApproval:ctx.approval.effectivePolicy(session),childRole:'subagent',pluginLoaded:true,smoke4ActionPolicy,acceptanceObservation:{defaultOffForWriteProbe:true,realPolicyHookOrderVerified:true,events:observation.map(e=>e.event),actualModelCalls:0,actualToolExecutionCalls:0},profilePreparation,modelCalls:0}));
+// Exercise the shipped credentials resolver without mounting an adapter or making a request.
+const {LocalCredentialProvider}=await import('@deepseek-ai/dsh-credentials-local');
+const {credentialRef}=await import('@deepseek-ai/dsh-credentials');
+const {createLaunchEnvironmentSnapshot}=await import('@deepseek-ai/dsh-launch-environment');
+const credentialCtx=new Context();credentialCtx.provide('launchEnvironment');
+const testRef='DSH_MCP_CONTRACT_API_KEY',fixtureKey='synthetic-no-model-contract-credential';
+credentialCtx.set('launchEnvironment',createLaunchEnvironmentSnapshot([{source:'process',values:{[testRef]:fixtureKey}}]));
+const credentials=new LocalCredentialProvider(credentialCtx,{dshHome:isolatedHome,watch:false});
+const resolvedCredential=await credentials.resolve(credentialRef(testRef));
+assert.equal(resolvedCredential.value,fixtureKey);assert.equal(resolvedCredential.source,'env');
+credentialCtx.set('launchEnvironment',createLaunchEnvironmentSnapshot([{source:'process',values:{}}]));
+assert.equal(await credentials.resolve(credentialRef(testRef)),undefined);
+const credentialResolution={realProvider:true,inheritedEnvironmentResolved:true,missingEnvironmentStaysAbsent:true,secretValuesEmitted:false,modelCalls:0};
+await credentialCtx.emit('dispose');
+// Optional operator probe: resolve only explicitly named environment references in
+// an isolated home. Never mount an LLM adapter, use the real store, or print values.
+const probeRefs=JSON.parse(process.argv[5]??'[]');
+const credentialEnvironmentProbe={requested:probeRefs.length>0,isolatedHome:true,realStoreAccessed:false,refs:[],providerAuthorization:'not-tested',modelCalls:0};
+if(probeRefs.length){
+  const probeCtx=new Context();probeCtx.provide('launchEnvironment');
+  const values={};for(const name of probeRefs)values[name]=process.env[name];
+  probeCtx.set('launchEnvironment',createLaunchEnvironmentSnapshot([{source:'process',values}]));
+  const provider=new LocalCredentialProvider(probeCtx,{dshHome:isolatedHome,watch:false});
+  try{
+    for(const name of probeRefs){
+      const credential=await provider.resolve(credentialRef(name));
+      const present=typeof credential?.value==='string'&&credential.value.length>0;
+      if(!present||credential.source!=='env')throw new Error('Credential environment contract failed (value withheld).');
+      credentialEnvironmentProbe.refs.push({name,present,source:credential.source});
+    }
+  }finally{await probeCtx.emit('dispose');}
+}
+console.log(JSON.stringify({credentialResolution,credentialEnvironmentProbe,nativeSessionVerification,persistedRestore:true,fileReadOnlyDenied:true,fileWorkspaceWriteAllowed:true,baseline:'0.2.0-rc.2',mainMode:ctx.sandboxPolicy.resolve({session}).mode,mainApproval:ctx.approval.effectivePolicy(session),childRole:'subagent',pluginLoaded:true,smoke4ActionPolicy,acceptanceObservation:{defaultOffForWriteProbe:true,realPolicyHookOrderVerified:true,events:observation.map(e=>e.event),actualModelCalls:0,actualToolExecutionCalls:0},profilePreparation,modelCalls:0}));
 await ctx.emit('dispose');

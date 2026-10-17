@@ -26,3 +26,11 @@ Release defaults to dry-run. The operator path also requires a successful OS pro
 Recovery acquires the scope execution lock before the global supervision registry lock. It saves original bytes, SHA-256 fingerprints and a pending receipt under `_locks/recoveries`. Pending recovery remains an execution barrier. Retry with the original expected digest and the same recovery method to finish an interrupted transaction. Conflicting edits fail closed. Other incidents, including new incidents at the same workspace, remain blocked.
 
 Read-only queries never recover abandoned tasks or refresh quarantine timestamps. `recovery_required` identifies a task that needs explicit operator action. A terminal `dsh_cancel` does not certify historical tree exit; inspect the quarantine instead. Never delete registry files as a routine recovery procedure.
+
+## Credential inheritance correction within v0.1.3
+
+The corrected candidate remains version 0.1.3; identify it by source commit, package fingerprint, and ZIP SHA-256, not the version string alone. Save the prior installation and receipt before replacing it. Keep the same state root, namespace, and DSH home. If plugin content is unchanged, the existing immutable profile is reused; do not bootstrap or edit a profile to fix missing environment variables.
+
+When a task fails with `MISSING_CREDENTIAL`, compare the environment of the bridge process, not just a current terminal. Restarting a terminal cannot change an existing bridge's environment. Use `diagnose` or `dsh_self_check`; `ready=true` covers profile content only. The bridge default official route need not match the manual Desktop account route. Do not silently change that route to make a test pass.
+
+For an explicitly configured Windows User credential, enable `DSH_MCP_CREDENTIAL_ENV_SOURCE=windows-user` and `DSH_MCP_CREDENTIAL_ENV_REFS=DEEPSEEK_API_KEY` in the MCP server configuration, without adding the key value. Drain old tasks, stop old bridges, then reconnect. Process values still win, including an intentionally empty value. Review the credential precedence and no-model resolver check in `configuration.md`. Confirm presence/resolution before any separately authorized model task. Preserve the failed task and its actual tree-exit evidence; never retry it automatically or record infrastructure failure as model accuracy.
