@@ -44,3 +44,14 @@ test('new quarantine tools pass SDK output-schema validation with complete evide
  const after=await b.client.callTool({name:'dsh_quarantine_status',arguments:{task_id:id}},CallToolResultSchema);assert.equal(after.structuredContent.active,false);
  const missing=await b.client.callTool({name:'dsh_quarantine_status',arguments:{task_id:'t-absent'}},CallToolResultSchema);assert.equal(missing.isError,true);assert.equal(missing.structuredContent.error.code,'TASK_NOT_FOUND');
 });
+
+test('verified native session compression is forwarded to the resumed runner',async t=>{
+ let seen=[];const b=await fixture(t,async input=>{seen.push(input.sessionCompression);return synthetic(input);},{verifySessionImpl:async()=>({verified:true,compression:'none'})});
+ const seed=await call(b.client,'dsh_task',{prompt:'seed'}),sid=seed.structuredContent.session_id;
+ const resumed=await call(b.client,'dsh_task',{prompt:'explicit continuation',session_id:sid});assert.equal(resumed.structuredContent.state,'completed');assert.deepEqual(seen,['zstd','none']);
+});
+test('unrecognized verifier compression cannot enter the resumed runner',async t=>{
+ let calls=0;const b=await fixture(t,async input=>{calls++;return synthetic(input);},{verifySessionImpl:async()=>({verified:true,compression:'unsafe'})});
+ const seed=await call(b.client,'dsh_task',{prompt:'seed'}),sid=seed.structuredContent.session_id;
+ const resumed=await call(b.client,'dsh_task',{prompt:'explicit continuation',session_id:sid});assert.equal(resumed.structuredContent.state,'failed');assert.equal(calls,1);
+});

@@ -30,7 +30,7 @@ test('overlay always states the per-task isolation roots', () => {
   const byId = new Map(patches.map((patch) => [patch.id, patch.config]));
 
   assert.deepEqual(byId.get('storage-json'), { root: BASE.storageRoot });
-  assert.deepEqual(byId.get('session-persistence-jsonl'), { root: BASE.sessionRoot });
+  assert.deepEqual(byId.get('session-persistence-jsonl'), { root: BASE.sessionRoot, compression:'zstd' });
   assert.deepEqual(byId.get('sandbox-policy'), { mode: DEFAULT_SANDBOX_MODE, workspaceRoot: BASE.workspace });
   assert.deepEqual(byId.get('approval'), { policy: 'ask' });
   assert.deepEqual(byId.get('agent-default-model'),{provider:'deepseek-official',model:'deepseek-flash'});

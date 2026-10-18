@@ -15,7 +15,13 @@ export function writeJsonAtomic(file, value) {
     fd = fs.openSync(temp, 'wx', 0o600);
     fs.writeFileSync(fd, JSON.stringify(value, null, 2) + '\n', 'utf8');
     fs.fsyncSync(fd); fs.closeSync(fd); fd = undefined;
-    fs.renameSync(temp, file);
+    for (let attempt = 0; ; attempt++) {
+      try { fs.renameSync(temp, file); break; }
+      catch (error) {
+        if (process.platform !== 'win32' || !['EPERM','EBUSY','EACCES'].includes(error.code) || attempt >= 7) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5 * (attempt + 1));
+      }
+    }
   } finally { if (fd !== undefined) fs.closeSync(fd); if (fs.existsSync(temp)) fs.unlinkSync(temp); }
 }
 export function appendJsonLine(file, value, { sync = true, separateTornTail = false } = {}) {

@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { resolveRuntime, assertCompatibleRuntime } from '../lib/dsh-profile.js';
+import {verifyNativeSessions} from '../lib/session-verify.js';
+import crypto from 'node:crypto';
 import { supervise } from '../lib/supervisor.js';
 import { repoRoot } from '../lib/paths.js';
 import { resolveCredentialEnvironment } from '../lib/credential-environment.js';
@@ -22,7 +24,17 @@ try {
   if(controller.signal.aborted)throw new Error(controller.signal.reason.message);
   if(result.code!==0)throw new Error(checkCredentials?'DSH credential contract failed. Raw output was withheld to protect credential values; no model was called.':'DSH no-model contract failed: '+stderr+'\n'+stdout);
   let parsed;try{parsed=JSON.parse(stdout.trim());}catch{throw new Error('DSH contract output was not valid JSON. Raw output was withheld.');}
-  console.log(JSON.stringify({...parsed,...(credentials?{credentialEnvironment:credentials.diagnosis}:{}),treeExited,ownedProcesses}));
+  const nativeSessionVerification=[];
+  for(const fixture of parsed.nativeSessionFixtures??[]) {
+    const digest=dir=>{const files=[];const walk=(base,prefix='')=>{for(const e of fs.readdirSync(base,{withFileTypes:true})){if(e.isSymbolicLink())throw new Error('Native fixture link refused.');const file=path.join(base,e.name);if(e.isDirectory())walk(file,prefix+e.name+'/');else files.push([prefix+e.name,crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);}};walk(dir);return JSON.stringify(files.sort((a,b)=>a[0].localeCompare(b[0])));};
+    const before=digest(fixture.root);
+    const proof=await verifyNativeSessions({sessionRoot:fixture.root,sessions:fixture.sessions,env:runtime.env,runtime});
+    if(proof.compression!==fixture.compression||proof.sessions[0]?.effectiveWorkingDirectory!==fixture.effectiveWorkingDirectory||digest(fixture.root)!==before)throw new Error('Native compression/projection/read-only verification failed.');
+    nativeSessionVerification.push({compression:proof.compression,verified:true,readOnly:true,effectiveWorkingDirectory:true,modelCalls:0});
+  }
+  if(nativeSessionVerification.length!==2)throw new Error('Both native session encodings must be verified.');
+  delete parsed.nativeSessionFixtures;
+  console.log(JSON.stringify({...parsed,nativeSessionVerification,...(credentials?{credentialEnvironment:credentials.diagnosis}:{}),treeExited,ownedProcesses}));
 } catch(error) {
   treeExited ||= error.treeExited===true;
   if(!treeExited)console.error('Exit unconfirmed; isolated probe data retained: '+sandbox);

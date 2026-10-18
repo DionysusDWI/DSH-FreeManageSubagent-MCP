@@ -71,7 +71,7 @@ async function make(mode,questionPolicy='pause',seconds=null,index='',options={}
   ctx.provide('shell');ctx.set('shell',{sandboxMode:'workspace-write'});
   await ctx.plugin(modules['permission-presets'].default,{defaultPreset:'workspace-write',presets:{'read-only':{sandbox:'read-only',approval:'ask'},'workspace-write':{sandbox:'workspace-write',approval:'ask'},'danger-full-access':{sandbox:'danger-full-access',approval:'never'}}});
   await ctx.plugin(modules['user-questions'].default,{});
-  await ctx.plugin(modules['session-persistence-jsonl'],{root:options.sessionRoot??path.join(dir,'sessions'),compression:'none'});
+  await ctx.plugin(modules['session-persistence-jsonl'],{root:options.sessionRoot??path.join(dir,'sessions'),compression:options.compression??'zstd'});
   await ctx.plugin(modules['agent-loop'].default,{agents:[]});
   ctx.llm.registerAdapter(['contract-local'],new LocalAdapter());
   const auto=await ctx.plugin(Auto);assert.ok(ctx.permissionPresets.names.includes('auto'));
@@ -208,6 +208,18 @@ await resolver.fiber.dispose();
 assert.deepEqual(BRIDGE_PROFILE_BUNDLES,['@deepseek-ai/dsh-base','@deepseek-ai/dsh-sdk-app']);
 const patch=buildProfilePatch();assert.ok(patch.includes('@deepseek-ai/dsh-experimental-auto-review'));for(const name of ['credentials','authorization','deepseek-account'])assert.ok(patch.includes('- id: '+name+'\n  disabled: true'));
 assert.equal(networkCalls,0);
+const nativeSessionFixtures=[];
+for(const compression of ['zstd','none']) {
+  const f=await make('read-only','pause',null,'-encoding-'+compression,{compression}),sid='encoding-'+compression;
+  try {
+    await f.sdk.getWorkingDirectory({sessionId:sid});
+    const changed=path.join(sandbox,'effective-directory');fs.mkdirSync(changed,{recursive:true});
+    await f.sdk.setWorkingDirectory({sessionId:sid,path:changed});
+    await f.ctx.sessions.flush(f.ctx.agents.get(sid).session);
+    await f.sdk.shutdown();
+    nativeSessionFixtures.push({root:path.join(f.dir,'sessions'),compression,sessions:[{sessionId:sid,workspace:sandbox}],effectiveWorkingDirectory:changed});
+  } finally {await f.ctx.fiber.dispose();}
+}
 const refs=JSON.parse(credentialRefsJson??'[]');
 clearInterval(keepAlive);
-console.log(JSON.stringify({verified:true,bridgeVersion:'0.1.4',dshVersion:JSON.parse(metadataJson).version,baselineCommit:'687f282e8625c6b8d11ff58211a90524be2e4317',modelCalls:0,networkCalls,syntheticAdapterCalls,syntheticReviewCalls,cases,reasoning,defaultReasoning,credentials:{strategy:'launch-environment-only',references:refs.map(name=>({name,present:!!process.env[name]}))},profile:{bundles:BRIDGE_PROFILE_BUNDLES,auto:'official',credentialsStoreDisabled:true},limitations:['No paid-model or packaged immutable-profile launch acceptance.','Local adapters exercise the installed native runtime without contacting a model.','PTC orchestration uses a synthetic substrate; persistent process enforcement is not certified by this probe.']}));
+console.log(JSON.stringify({verified:true,bridgeVersion:'0.1.4',dshVersion:JSON.parse(metadataJson).version,baselineCommit:'687f282e8625c6b8d11ff58211a90524be2e4317',modelCalls:0,networkCalls,syntheticAdapterCalls,syntheticReviewCalls,cases,nativeSessionFixtures,reasoning,defaultReasoning,credentials:{strategy:'launch-environment-only',references:refs.map(name=>({name,present:!!process.env[name]}))},profile:{bundles:BRIDGE_PROFILE_BUNDLES,auto:'official',credentialsStoreDisabled:true},limitations:['No paid-model or packaged immutable-profile launch acceptance.','Local adapters exercise the installed native runtime without contacting a model.','PTC orchestration uses a synthetic substrate; persistent process enforcement is not certified by this probe.']}));
