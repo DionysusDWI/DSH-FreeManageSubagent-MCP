@@ -1,8 +1,8 @@
 {
   "name": "dsh-mcp-plugin",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
-  "description": "DSH-side durable reporting, guidance and permission ceiling for the generic dsh-mcp bridge.",
+  "description": "Native preset admission, durable bidirectional approvals/questionnaires, reporting and guidance for dsh-mcp.",
   "type": "module",
   "license": "MIT",
   "main": "index.js",
@@ -13,7 +13,13 @@
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/dsh-sandbox-policy": "*",
-    "@deepseek-ai/dsh-user-approval": "*"
+    "@deepseek-ai/dsh-user-approval": "*",
+    "@deepseek-ai/dsh-permission-presets": "*",
+    "@deepseek-ai/dsh-working-directory": "*",
+    "@deepseek-ai/dsh-user-questions": "*",
+    "@deepseek-ai/dsh-session-projection": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-llm": "*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-tools": {
@@ -23,6 +29,24 @@
       "optional": true
     },
     "@deepseek-ai/dsh-user-approval": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-permission-presets": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-working-directory": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-user-questions": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
       "optional": true
     }
   }

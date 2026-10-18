@@ -5,10 +5,12 @@ import test from 'node:test';
 import { attributionOf,installPolicyGuard } from '../dsh-plugin/policy.js';
 import {resultContainsGuidance} from '../dsh-plugin/guidance-result.js';
 import { tempDir } from './helpers.js';
-function agent(id,cwd,patch={}) {return {id,session:{id,header:{id,cwd,...patch},mode:'danger-full-access',approval:'never'},cancel(){},async whenIdle(){}};}
+function agent(id,cwd,patch={}) {return {id,session:{id,header:{id,cwd,...patch},preset:'danger-full-access',mode:'danger-full-access',approval:'never'},cancel(){},async whenIdle(){}};}
 function harness() {
   const listeners=new Map(), guards=[];
   const ctx={on(name,fn){const list=listeners.get(name)??[];list.push(fn);listeners.set(name,list);},tools:{guard(fn){guards.push(fn);}},sandboxPolicy:{resolve({session}){return {mode:session.mode,workspaceRoot:session.header.cwd};}},approval:{effectivePolicy(session){return session.approval;}},sessions:{async flush(){return true;}}};
+  ctx.permissionPresets={names:['read-only','workspace-write','danger-full-access','auto'],set(session,preset){session.preset=preset;session.mode=preset==='auto'?'danger-full-access':preset;session.approval=preset==='danger-full-access'?'never':'ask';},current(session){return session.preset;}};
+  ctx.workingDirectory={async ensure(agent){return agent.session.effectiveCwd??agent.session.header.cwd;},get(session){return session.effectiveCwd??session.header.cwd;}};
   return {ctx,listeners,guards,async announce(agent){for(const fn of listeners.get('agent/created') ?? [])await fn({agent});}};
 }
 const setters={setSandboxMode(session,mode){session.mode=mode;},setApprovalPolicy(session,policy){session.approval=policy;}};
@@ -28,8 +30,8 @@ test('stricter children are preserved, wider child permissions are clamped, late
   const strict=agent('strict',dir,{origin:'subagent',parentSession:'main'});strict.session.mode='read-only';strict.session.approval='never';await h.announce(strict);assert.equal(strict.session.mode,'read-only');assert.equal(strict.session.approval,'never');
   const descendant=agent('descendant',dir,{origin:'subagent',parentSession:'strict'});await h.announce(descendant);assert.equal(descendant.session.mode,'read-only');
   const wide=agent('wide',dir,{origin:'subagent',parentSession:'main'});await h.announce(wide);assert.equal(wide.session.mode,'workspace-write');
-  strict.session.mode='workspace-write';assert.match(h.guards[0]({agent:strict}),/ceiling/);
-  await assert.rejects(h.listeners.get('agent/pre-step')[0]({agent:strict},async()=>({kind:'enter'})),/ceiling/);
+  strict.session.mode='workspace-write';assert.match(h.guards[0]({agent:strict}),/preset changed/);
+  await assert.rejects(h.listeners.get('agent/pre-step')[0]({agent:strict},async()=>({kind:'enter'})),/preset changed/);
 });
 test('unknown ownership, missing persistence or incompatible capabilities fail closed',async t=> {
   const {dir,cleanup}=tempDir('policy-fail');t.after(cleanup);const h=harness();installPolicyGuard(h.ctx,{sandboxMode:'read-only',workspace:dir,conversationKey:'c',taskId:'t',dir},setters);
@@ -40,7 +42,7 @@ test('unknown ownership, missing persistence or incompatible capabilities fail c
 
 test('a second plugin context cannot claim another root as main and steal the task guidance',async t=> {
  const {dir,cleanup}=tempDir('main-claim');t.after(cleanup);const config={sandboxMode:'read-only',workspace:dir,conversationKey:'c',taskId:'t',dir},a=harness(),b=harness();
- installPolicyGuard(a.ctx,config,setters);installPolicyGuard(b.ctx,config,setters);await a.announce(agent('main',dir));await assert.rejects(b.announce(agent('nested-root',dir)),/already owns the main/);
+ installPolicyGuard(a.ctx,config,setters);installPolicyGuard(b.ctx,config,setters);await a.announce(agent('main',dir));await assert.rejects(b.announce(agent('nested-root',dir)),/ownership conflict/);
  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'main-agent.json'),'utf8')).agentId,'main');
 });
 
@@ -57,4 +59,20 @@ test('guidance confirmation verifies indexed full text after restart, including 
 });
 test('failed DSH tool results never confirm steering even if the full receipt is present',()=> {
  const messages=[{messageId:'stable',seq:1,text:'do it'}];assert.equal(resultContainsGuidance({data:{message:{isError:true,content:[{type:'text',text:'[stable] do it'}]}}},messages),false);
+});
+
+test('Auto uses the native preset, permits reviewed per-call Full access, and stops after Auto unload',async t=>{
+  const {dir,cleanup}=tempDir('policy-auto');t.after(cleanup);const h=harness(),main=agent('main',dir);
+  const state=installPolicyGuard(h.ctx,{permissionMode:'auto',workspace:dir,conversationKey:'c',taskId:'t',dir},setters);
+  await h.announce(main);assert.equal(main.session.preset,'auto');assert.equal(main.session.mode,'danger-full-access');assert.equal(main.session.approval,'ask');
+  assert.equal(h.guards[0]({agent:main,name:'bash',sandboxPolicy:{mode:'danger-full-access'}}),undefined);
+  h.ctx.permissionPresets.names.splice(h.ctx.permissionPresets.names.indexOf('auto'),1);main.session.approval='never';main.session.preset='danger-full-access';
+  assert.match(h.guards[0]({agent:main,name:'bash'}),/missing or was disposed/);await assert.rejects(h.listeners.get('agent/pre-step')[0]({agent:main},async()=>{}),/missing or was disposed/);assert.ok(state);
+});
+test('native one-time Full access in a tool execution does not mutate or violate a narrow standing preset',async t=>{
+  const {dir,cleanup}=tempDir('policy-once');t.after(cleanup);const h=harness(),main=agent('main',dir);
+  installPolicyGuard(h.ctx,{permissionMode:'read-only',workspace:dir,conversationKey:'c',taskId:'t',dir,questionPolicy:'pause'},setters);await h.announce(main);
+  assert.equal(h.guards[0]({agent:main,name:'bash',sandboxPolicy:{mode:'danger-full-access'}}),undefined);
+  assert.match(h.guards[0]({agent:main,name:'ask_user_question',arguments:{timeout:1}}),/cannot be overridden/);
+  assert.equal(h.guards[0]({agent:main,name:'ask_user_question',arguments:{timeout:-1}}),undefined);
 });

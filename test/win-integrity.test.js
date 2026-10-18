@@ -84,11 +84,11 @@ test('probe verdicts fail closed on refusal, missing start, unsettled tree and t
   for (const events of [[], [{ type: 'started' }], [{ type: 'started' }, { type: 'exit', code: 0, treeExited: false }]]) {
     const verdict = verdictFromGuardianEvents({ events, wrote: true });
     assert.equal(verdict.ok, false, 'incomplete evidence must not pass: ' + JSON.stringify(events));
-    assert.equal(verdict.code, LABEL_UNVERIFIED);
+    assert.ok([LABEL_UNVERIFIED,'GUARDIAN_PROTOCOL_MISMATCH'].includes(verdict.code));
   }
   assert.equal(verdictFromGuardianEvents({ events: [{ type: 'started' }, { type: 'exit', code: 0, treeExited: true }], wrote: false }).ok, false);
   assert.equal(verdictFromGuardianEvents({ events: [{ type: 'started' }, { type: 'exit', code: 0, treeExited: true }], wrote: false, timedOut: true }).detail, 'The guardian probe timed out.');
-  const healthy = verdictFromGuardianEvents({ events: [{ type: 'started' }, { type: 'exit', code: 0, treeExited: true }], wrote: true });
+  const healthy = verdictFromGuardianEvents({ events: [{type:'hello',protocol:2,stdin:true},{ type: 'started',protocol:2 }, { type: 'exit', code: 0, treeExited: true }], wrote: true });
   assert.equal(healthy.ok, true);
   assert.equal(healthy.code, null);
 });

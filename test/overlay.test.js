@@ -33,13 +33,14 @@ test('overlay always states the per-task isolation roots', () => {
   assert.deepEqual(byId.get('session-persistence-jsonl'), { root: BASE.sessionRoot });
   assert.deepEqual(byId.get('sandbox-policy'), { mode: DEFAULT_SANDBOX_MODE, workspaceRoot: BASE.workspace });
   assert.deepEqual(byId.get('approval'), { policy: 'ask' });
-  assert.equal(byId.has('agent-default-model'), false, 'model is only pinned when requested');
+  assert.deepEqual(byId.get('agent-default-model'),{provider:'deepseek-official',model:'deepseek-flash'});
+  assert.deepEqual(byId.get('sdk-jsonrpc-server'),{maxTokensAsSuccess:false});
 });
 
-test('approval policy loosens only for full access', () => {
+test('legacy public sandbox policy never exposes direct full access', () => {
   assert.equal(approvalPolicyFor('read-only'), 'ask');
   assert.equal(approvalPolicyFor('workspace-write'), 'ask');
-  assert.equal(approvalPolicyFor('danger-full-access'), 'never');
+  assert.throws(()=>approvalPolicyFor('danger-full-access'),/Full access/);
 });
 
 test('sandbox mode is validated rather than passed through', () => {

@@ -8,7 +8,7 @@ const digest=v=>crypto.createHash('sha256').update(typeof v==='string'?v:JSON.st
 export function createAcceptanceObserver(config,env=process.env) {
   if(!env.DSH_MCP_ACCEPTANCE_TASK) return null;
   const receipt=JSON.parse(env.DSH_MCP_ACCEPTANCE_TASK);
-  if(receipt.version!==1||receipt.taskId!==config.taskId||receipt.identity!==config.conversationKey||typeof receipt.correlationId!=='string'||typeof receipt.caseId!=='string'||!Number.isInteger(receipt.observation?.maxChildren)) throw new Error('Acceptance task observation owner/correlation mismatch.');
+  if(receipt.version!==2||receipt.bridgeVersion!=='0.1.4'||receipt.taskId!==config.taskId||receipt.identity!==config.conversationKey||typeof receipt.correlationId!=='string'||typeof receipt.caseId!=='string'||!Number.isInteger(receipt.observation?.maxChildren)) throw new Error('Acceptance task observation owner/correlation mismatch.');
   const file=path.join(config.dir,'acceptance-events.ndjson'),children=new Set(),policy=receipt.suite==='smoke4'?receipt.observation.toolPolicy:null;
   if(receipt.suite==='smoke4'&&(!policy||!['allowedTools','files','commandHashes'].every(k=>Array.isArray(policy[k]))||!policy.commandTargets||typeof policy.commandTargets!=='object'||policy.commandHashes.some(hash=>!Array.isArray(policy.commandTargets[hash])))) throw new Error('smoke4 requires a bound pre-tool action policy; execution is refused.');
   function record(event,details={}) {
@@ -18,7 +18,7 @@ export function createAcceptanceObserver(config,env=process.env) {
         const lines=fs.readFileSync(file,'utf8').trimEnd().split('\n').filter(Boolean);
         if(lines.length) {const last=JSON.parse(lines.at(-1));if(last.taskId!==config.taskId||last.conversationKey!==config.conversationKey)throw new Error('Acceptance evidence owner drift.');seq=last.seq;}
       }
-      appendJsonLine(file,{version:1,seq:seq+1,event,eventId:crypto.randomUUID(),ts:Date.now(),pid:process.pid,...details,version:1,taskId:config.taskId,conversationKey:config.conversationKey,caseId:receipt.caseId,correlationId:receipt.correlationId});
+      appendJsonLine(file,{version:2,bridgeVersion:'0.1.4',seq:seq+1,event,eventId:crypto.randomUUID(),ts:Date.now(),pid:process.pid,...details,version:2,taskId:config.taskId,conversationKey:config.conversationKey,caseId:receipt.caseId,correlationId:receipt.correlationId});
     });
   }
   function toolFacts(exec) {
@@ -28,7 +28,7 @@ export function createAcceptanceObserver(config,env=process.env) {
     if(typeof args.command==='string') facts.commandHash=digest(args.command);
     if(typeof args.content==='string') facts.contentHash=digest(args.content);
     if(typeof args.file_path==='string') {
-      const resolved=path.resolve(exec.agent.session.header.cwd,args.file_path);
+      const resolved=path.resolve((config.workingDirectory?.(exec.agent.session)??exec.agent.session.header.cwd),args.file_path);
       if((receipt.observation.fixtureRoots ?? []).some(r=>resolved===path.resolve(r)||resolved.startsWith(path.resolve(r)+path.sep))) facts.syntheticFile=resolved;
       else facts.filePathHash=digest(resolved);
     }
@@ -81,7 +81,7 @@ export function createAcceptanceObserver(config,env=process.env) {
       if(expected&&!matchesDefault){record('acceptance-violation',{kind:'default-model-selection-drift',agentId:agent.id});throw new Error('Acceptance default model selection is missing or changed; no fallback or override is permitted.');}
     },
     proof(phase,agent,policy,extra={}) {
-      record(phase,{agentId:agent.id,sessionId:agent.session.id,agentRole:agent.session.header.parentSession?'subagent':'main',parentSession:agent.session.header.parentSession ?? null,sandboxMode:policy.mode,approvalPolicy:policy.approval,workspace:agent.session.header.cwd,verified:true,...extra});
+      record(phase,{agentId:agent.id,sessionId:agent.session.id,agentRole:agent.session.header.parentSession?'subagent':'main',parentSession:agent.session.header.parentSession ?? null,sandboxMode:policy.mode,approvalPolicy:policy.approval,workspace:config.workspace,effectiveWorkingDirectory:config.workingDirectory?.(agent.session)??agent.session.header.cwd,nativePreset:policy.preset??null,permissionMode:config.permissionMode??config.sandboxMode,verified:true,...extra});
     },
   };
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import {syntheticSupervise} from './fixtures/synthetic-sdk.mjs';
 import { runTask } from '../lib/task-runner.js';
 import { taskPaths } from '../lib/paths.js';
 import { writeJsonAtomic } from '../lib/io.js';
@@ -10,12 +11,10 @@ import { TaskStore } from '../lib/store.js';
 import { connect,call,result } from './mcp-helpers.js';
 import { createChannel,appendGuidance,prepareSteering,confirmSteering,channelPaths } from '../dsh-plugin/channel.js';
 import { tempDir,isolatedEnv } from './helpers.js';
-function runnerFixture(t) {const temp=tempDir('runner-fault');t.after(temp.cleanup);const paths=taskPaths('c','task',path.join(temp.dir,'state')),env=isolatedEnv(temp.dir,{DSH_HOME:path.join(temp.dir,'home')});return {temp,paths,input:{conversationKey:'c',taskId:'task',workspace:temp.dir,prompt:'no-model stub',stateRoot:path.join(temp.dir,'state'),paths,runtime:{launcher:{command:process.execPath,prefixArgs:[],launcherScript:'fake-cli'},home:env.DSH_HOME,version:'0.2.0-rc.2',env},ensureProfileImpl:async()=>({name:'verified-fake-profile',fingerprint:'fake'})}};}
-function proof(input) {writeJsonAtomic(path.join(input.paths.dir,'policy.json'),{version:2,conversationKey:'c',taskId:'task',sessionId:'session-main',agentId:'session-main',agentRole:'main',approvalPolicy:input.sandboxMode==='danger-full-access'?'never':'ask',workspace:input.workspace,sandboxMode:input.sandboxMode ?? 'workspace-write',verified:true});}
-function output(workspace){return Buffer.from(JSON.stringify({type:'session',sessionId:'session-main',cwd:workspace})+'\n'+JSON.stringify({type:'final',text:'answer'})+'\n');}
+function runnerFixture(t) {const temp=tempDir('runner-fault');t.after(temp.cleanup);const paths=taskPaths('c','task',path.join(temp.dir,'state')),env=isolatedEnv(temp.dir,{DSH_HOME:path.join(temp.dir,'home')});return {temp,paths,input:{conversationKey:'c',taskId:'task',workspace:temp.dir,prompt:'no-model stub',stateRoot:path.join(temp.dir,'state'),paths,runtime:{launcher:{command:process.execPath,prefixArgs:[],launcherScript:'fake-cli'},home:env.DSH_HOME,version:'0.2.1-rc.2',env},ensureProfileImpl:async()=>({name:'verified-fake-profile',fingerprint:'fake'})}};}
 test('runner uses the exact resolved launcher, environment, home and immutable profile throughout',async t=> {
- const f=runnerFixture(t);let session;const input={...f.input,onSession:id=>session=id};input.superviseImpl=async options=>{assert.equal(options.command,input.runtime.launcher.command);assert.equal(options.env.DSH_HOME,input.runtime.home);assert.equal(options.env.DSH_MCP_WORKSPACE,input.workspace);assert.ok(options.args.includes('verified-fake-profile'));proof(input);options.onStarted({pid:process.pid,supervision:'stub'});options.onStdout(output(f.input.workspace));return {code:0,treeExited:true};};
- const value=await runTask(input);assert.equal(value.state,'completed');assert.equal(session,'session-main');assert.equal(value.reports,undefined);assert.equal(value.answer,'answer');
+ const f=runnerFixture(t);let session;const input={...f.input,onSession:id=>session=id};input.superviseImpl=syntheticSupervise({inspect:options=>{assert.equal(options.command,input.runtime.launcher.command);assert.equal(options.env.DSH_HOME,input.runtime.home);assert.equal(options.env.DSH_MCP_WORKSPACE,input.workspace);assert.ok(options.args.includes('verified-fake-profile'));}});
+ const value=await runTask(input);assert.equal(value.state,'completed');assert.match(session,/^[a-f0-9-]{36}$/);assert.equal(value.reports,undefined);assert.equal(value.answer,'answer');
 });
 test('cancelled before preparation or expired acceptance deadline never spawns or provisions',async t=> {
  const f=runnerFixture(t),controller=new AbortController();controller.abort({kind:'cancelled',message:'already cancelled'});let calls=0;
@@ -26,17 +25,17 @@ test('standalone task timeout covers provisioning instead of starting after it',
  const f=runnerFixture(t);let launched=false;const now=Date.now();await assert.rejects(runTask({...f.input,timeoutMs:30,ensureProfileImpl:async options=>{await delay(1000,options.signal);},superviseImpl:async()=>{launched=true;}}));assert.equal(launched,false);assert.ok(Date.now()-now<500);
 });
 test('missing effective-permission proof refuses the task rather than running unverified',async t=> {
- const f=runnerFixture(t);await assert.rejects(runTask({...f.input,superviseImpl:async options=>{options.onStdout(output(f.input.workspace));return {code:0,treeExited:true};}}));
+ const f=runnerFixture(t);const value=await runTask({...f.input,superviseImpl:syntheticSupervise({missingProof:true})});assert.equal(value.state,'failed');assert.match(value.reason.message,/proof is missing/);
 });
 test('timeout preserves captured main session before terminating the runner',async t=> {
- const f=runnerFixture(t);let captured;const input={...f.input,timeoutMs:60,onSession:id=>captured=id,superviseImpl:async options=>{proof(f.input);options.onStdout(Buffer.from('{"type":"session","sessionId":"session-main"}\n'));if(!options.signal.aborted)await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));return {code:137,treeExited:true};}};
- const value=await runTask(input);assert.equal(value.state,'timeout');assert.equal(captured,'session-main');assert.equal(value.sessionId,'session-main');
+ const f=runnerFixture(t);let captured;const value=await runTask({...f.input,timeoutMs:80,onSession:id=>captured=id,superviseImpl:syntheticSupervise({stall:'session/prompt'})});
+ assert.equal(value.state,'timeout');assert.match(captured,/^[a-f0-9-]{36}$/);assert.equal(value.sessionId,captured);
 });
 test('log write failure is explicit and closes both owned descriptors',async t=> {
  const f=runnerFixture(t),open=fs.openSync,write=fs.writeFileSync,descriptors=[];
  fs.openSync=function(file,...args){const fd=open.call(this,file,...args);if(file===f.paths.reportLog||file===f.paths.stderrLog)descriptors.push(fd);return fd;};
  fs.writeFileSync=function(file,...args){if(typeof file==='number'&&descriptors.includes(file))throw Object.assign(new Error('disk full'),{code:'ENOSPC'});return write.call(this,file,...args);};
- try{await assert.rejects(runTask({...f.input,superviseImpl:async options=>{proof(f.input);options.onStdout(output(f.input.workspace));return {code:0,treeExited:true};}}),/disk full/);}
+ try{await assert.rejects(runTask({...f.input,superviseImpl:syntheticSupervise()}),/disk full/);}
  finally{fs.openSync=open;fs.writeFileSync=write;}
  assert.equal(descriptors.length,2);for(const fd of descriptors)assert.throws(()=>fs.fstatSync(fd),{code:'EBADF'});
 });
@@ -62,7 +61,7 @@ test('task terminal state cannot be reopened or silently overwritten with anothe
 });
 
 test('final-only stdout cannot bypass main-session permission verification',async t=> {
- const f=runnerFixture(t);await assert.rejects(runTask({...f.input,superviseImpl:async options=>{options.onStdout(Buffer.from('{"type":"final","text":"unverified"}\n'));return {code:0,treeExited:true};}}),{code:'PERMISSION_VERIFICATION_FAILED'});
+ const f=runnerFixture(t);await assert.rejects(runTask({...f.input,superviseImpl:async options=>{options.onStdout(Buffer.from('{"type":"final","text":"unverified"}\n'));return {code:0,treeExited:true};}}),/Malformed SDK|JSON-RPC/);
 });
 
 test('terminal task-record write failure returns a real failure instead of a stale preparing/running snapshot',async t=> {

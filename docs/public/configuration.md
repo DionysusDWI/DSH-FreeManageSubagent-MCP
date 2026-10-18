@@ -1,48 +1,70 @@
-# Generic local deployment
+# Generic local deployment (0.1.4)
 
-DSH Desktop is the only backend, tested extension baseline 0.2.0-rc.2. Windows x64 is the only qualified platform. Trusted local clients use stdio MCP; no authentication server or network transport is provided.
+DSH Desktop is the only backend. The unique extension baseline is **0.2.1-rc.2**, source reference `687f282e8625c6b8d11ff58211a90524be2e4317`. Windows x64 with bundled Node 24.19.0 is the release target. Trusted local clients use stdio MCP; no authentication service or network listener is provided.
 
 | Configuration | Meaning |
 | --- | --- |
-| DSH_MCP_NAMESPACE | Case-sensitive deployment namespace, default local. Shared by all trusted clients using this configuration; not derived from chat metadata |
-| DSH_MCP_STATE | Absolute state root, default LOCALAPPDATA/dsh-mcp/state on Windows. Cooperating deployments use the same root so workspace locks coordinate |
-| DSH_MCP_DSH | Explicit Desktop installation, executable or supported CLI path. Invalid overrides refuse; no silent fallback |
-| DSH_MCP_CREDENTIAL_ENV_SOURCE | `process` (default) or explicit Windows-only `windows-user`; never chooses a provider |
-| DSH_MCP_CREDENTIAL_ENV_REFS | Comma-separated credential variable names; required explicit allowlist for `windows-user`, maximum 16 |
-| DSH_HOME | Native DSH home; unchanged. Holds manual and immutable bridge profiles |
-| DSH_MCP_CSC | Explicit Windows C# compiler path for source builds |
-| DSH_MCP_BUILD_STAGE / DSH_MCP_RELEASE_STAGE | Explicit safe stage directories on the binary destination volume; builds never alter ACLs or integrity labels |
+| `DSH_MCP_NAMESPACE` | Case-sensitive deployment namespace, default local. Shared by trusted clients using this configuration; not derived from chat metadata. |
+| `DSH_MCP_STATE` | Absolute state root, default LOCALAPPDATA/dsh-mcp/state on Windows. Cooperating deployments share this root so workspace locks coordinate. |
+| `DSH_MCP_DSH` | Explicit Desktop installation, executable or supported private CLI path. Invalid overrides refuse without fallback. |
+| `DSH_MCP_CREDENTIAL_ENV_SOURCE` | process (default) or explicitly enabled Windows-only windows-user; never selects a provider. |
+| `DSH_MCP_CREDENTIAL_ENV_REFS` | Comma-separated credential names; required allowlist for windows-user, maximum 16. |
+| `DSH_HOME` | Native DSH home; holds manual and immutable bridge profiles. Not the MCP state root. |
+| `DSH_MCP_CSC` | Explicit C# compiler path for source builds. |
+| `DSH_MCP_BUILD_STAGE` / `DSH_MCP_RELEASE_STAGE` | Explicit safe stages on the binary destination volume. Builds never alter ACLs or integrity labels. |
 
-The following old variables are whitelist aliases: CODEX_DSH_MCP_STATE, CODEX_DSH_MCP_DSH, CODEX_DSH_MCP_WORKSPACE, CODEX_DSH_CSC, CODEX_DSH_MCP_BUILD_STAGE and CODEX_DSH_MCP_RELEASE_STAGE. Different new/old values reject. The workspace alias is retained as configuration compatibility only; dsh_task still requires its own absolute workspace. No other old CODEX_DSH flags drive runtime routing, profile initialization or acceptance. PLUGIN_ROOT, PLUGIN_DATA and old multiplex flags have no deployment meaning.
+Whitelisted compatibility aliases remain CODEX_DSH_MCP_STATE, CODEX_DSH_MCP_DSH, CODEX_DSH_MCP_WORKSPACE, CODEX_DSH_CSC, CODEX_DSH_MCP_BUILD_STAGE and CODEX_DSH_MCP_RELEASE_STAGE. Conflicting old/new values reject. A workspace alias does not remove the required absolute task workspace. PLUGIN_ROOT, PLUGIN_DATA and old multiplex flags have no routing meaning.
 
-config --format server-json, mcp-json or toml prints a server entry using actual absolute paths, without editing any client. --namespace, --state, --dsh and --dsh-home override generated fields. --credential-env-source and --credential-env-refs set credential inheritance without copying credential values. Source checkout falls back to the actual Node executable; release uses its bundled runtime. Never copy one machine's generated paths to another machine.
+`config --format server-json|mcp-json|toml` prints a server entry using actual absolute paths, without editing a client. `--namespace`, `--state`, `--dsh` and `--dsh-home` override generated fields. `--credential-env-source` and `--credential-env-refs` configure named credential inheritance, never key values. Source checkouts use the invoking Node executable; self-contained packages use their bundled runtime. Reconnect after applying configuration, and regenerate it after moving the installation.
 
-Default sandbox remains workspace-write. read-only is appropriate for analysis. danger-full-access is retained but requires separate explicit authorization; this release does not test it with a paid agent. provider/model are paired optional task overrides; the bridge never selects a fallback. Report/guidance/permission DSH plugins remain necessary and are packaged with neutral names.
+## Native execution configuration
 
-Self-check does not execute token/state probes, install dependencies or touch a missing state directory. A ready profile means its content matches; guardian launch-time token/state preflight and actual policy persistence are still mandatory. An absent ready profile requires a separately authorized explicit bootstrap. Updates create new fingerprinted profiles; old profiles are not edited.
+Task configuration is fixed at launch or explicit continuation. `reasoning_effort` is off/low/high/max, with the native model default when omitted. Provider/model overrides must be paired. Full native model resolution is returned in effective_configuration; an unsupported effort fails, not downgrades.
 
-Namespaces prevent accidental state crossover through the MCP tools, not arbitrary access by the same OS user. Keep different trust domains in different OS environments. No promise is made of auto-isolation of chats in a single harness.
+`permission_mode` is read-only/workspace-write/auto/inherit, default workspace-write. Inherit requires an unverified caller upstream_permission_mode declaration; read-only and workspace-write map to themselves, full-access maps to auto. The declaration is not a ceiling for explicit choices. Merely declaring full-access does not choose auto.
+
+Direct Full access is not a selectable MCP preset. **Native reviewed or one-time-approved Full access execution is allowed.** Auto uses the official plugin and native preset selection, not a handcrafted Full access override. A missing/unloaded Auto plugin closes new execution. The old sandbox_mode accepts read-only and workspace-write only, cannot coexist with permission_mode, and refuses its historical direct Full access value rather than silently mapping it to Auto.
+
+Question policy is pause by default; continue defaults to 120 seconds and can explicitly set question_timeout_seconds (integer 1–2147483). Pause rejects that timeout field. The task total deadline still bounds all waiting. See [management API](management-0.1.4.md) for approval/question lifecycle, response digests, pagination and late-answer costs.
+
+The bridge retains the base tool composition; it does not add a Search/Fetch option or change provider settings as an upgrade workaround. Native base tool availability is not permission to incur an auxiliary search request. Do not submit tasks without scoped workspace and model-cost authorization.
+
+## Profile and diagnosis
+
+Explicit bootstrap installs base + sdk-app + official Auto + question tool + bridge into a new fingerprinted profile. It may use network and writes DSH_HOME; normal startup/config/diagnosis/capabilities never do so. Old profiles are not edited or silently upgraded.
+
+`dsh_capabilities`, `diagnose` and `dsh_self_check` distinguish:
+
+- profile content integrity/readiness;
+- required package presence at the installed baseline;
+- active runtime/preset/guardian verification (still required on every launch);
+- named credential environment presence;
+- provider authorization (not tested by these readers).
+
+Readers do not run token/state probes or touch a missing state directory. Feature availability is not a paid acceptance result. Namespace isolation prevents accidental crossover through the tools, not arbitrary access by the same OS user. Use separate OS trust domains when needed; there is no per-chat auto-isolation promise.
 
 ## Credentials and default routing
 
-The bridge base/headless profile defaults to `deepseek-official / deepseek-flash`. It is independent of the model selected in a manual Desktop profile. Provider/model task overrides must be paired and explicit. The bridge never falls back to an account route or another provider after a credential failure.
+The default remains `deepseek-official / deepseek-flash`, independent of the model selected in a manual Desktop profile. No credential failure triggers an alternate account route or provider. The SDK base normally mounts interactive credential/account services, unlike headless. The immutable bridge patch explicitly disables credentials, authorization and deepseek-account to preserve the headless launch-environment strategy.
 
-A ready immutable profile proves file integrity, not credential availability, API authorization, credit, or model readiness. A key in a new terminal or Windows User environment does not prove that an already running MCP bridge inherited it.
+For the official adapter without the credentials service, rc.2 uses DSH's immutable launch-environment snapshot: inherited process values, then invoking-project `.env`, then DSH-home `.env`. An existing process value, including empty, masks lower layers. The bridge does not import GUI saved credentials. Changing the current working directory later does not reread credentials. Other explicit adapters retain their native contracts; they are not automatic fallback routes.
 
-Default `process` mode passes the bridge process environment unchanged. On Windows, an operator can explicitly allow missing credential references to be read from Windows User environment values:
+A key in a new terminal or the Windows User environment does not prove that an already running bridge inherited it. Default process mode passes that bridge environment. An operator can explicitly fill named *missing* references from Windows User values:
 
 ```powershell
 .\runtime\node.exe .\bin\dsh-mcp.js config --format toml --credential-env-source windows-user --credential-env-refs DEEPSEEK_API_KEY
 ```
 
-This prints only the source and reference name in the MCP environment configuration. Do not put a key value into the generated configuration. Reconnect the client after applying it. Names are case-insensitive on Windows; runtime/control variables and duplicate names are refused. The bridge reads only requested missing references, once per task; it does not enumerate the registry, cache keys, modify `process.env`, or write keys to profiles, overlays, state, or diagnostics. An explicitly present process value, including an empty string, is not replaced. Imported User values become process environment for DSH and therefore take precedence over stored credentials for the same reference. DSH Desktop 0.2.0-rc.2 then resolves process, credential store, project `.env`, and home `.env` in that order. Do not enable User inheritance if that precedence is unwanted.
+This prints source/name only; never paste a key into generated configuration. Reconnect afterwards. Names are case-insensitive on Windows; runtime/control variables and duplicate names are refused. The bridge reads only allowed missing names once per task, without registry enumeration, caching or process.env modification. An explicitly empty process value is not replaced. Imported User values enter DSH as process-layer values and therefore mask its lower `.env` layers.
 
-`diagnose` and `dsh_self_check` report names, presence, and source only. They do not inspect the DSH credential store or test provider authorization. With explicit User inheritance, these read-only checks can start a hidden, bounded PowerShell reader; they still do not initialize state or submit tasks.
+No keys are copied into profiles, task configuration or diagnostic/acceptance records. Diagnostics show reference names, presence and source, not values. With explicit windows-user mode, a read-only check may start a hidden bounded PowerShell lookup; it still does not initialize state or call a model.
 
-For an explicit zero-model check through Guardian, installed Electron, and the real DSH credentials resolver, use:
+## Explicit zero-model checks
 
 ```powershell
+.\runtime\node.exe .\scripts\check-guardian.js
+.\runtime\node.exe .\scripts\check-dsh-contract.js
 .\runtime\node.exe .\scripts\check-dsh-contract.js --credentials
 ```
 
-Set the source/ref configuration in that command environment as needed. The check uses an isolated temporary DSH home, loads no LLM adapter, and emits no credential values. It can confirm credential transit and resolution, not that a provider accepts a key. The normal SDK check without this flag uses synthetic credentials only.
+The native contract runs inside an isolated temporary DSH home using installed rc.2 modules and deterministic local adapters. No provider stream/network request is made. The optional flag checks allowed credential-reference presence/transit through Guardian and installed Electron, emitting no values. It **does not** verify a real key, CLI `.env` loading, provider credit or the complete packaged immutable-profile launch. It is not the old interactive credential-store resolver probe. Real model and package acceptance require separate authorization and a fresh exact-candidate receipt.

@@ -1,3 +1,4 @@
+import {syntheticSupervise} from './fixtures/synthetic-sdk.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -97,11 +98,11 @@ test('task execution receives explicit User credentials without persisting a val
   const env=isolatedEnv(temp.dir,userConfig);delete env.DEEPSEEK_API_KEY;
   let observed,metadata;
   const value=await runTask({conversationKey:'credential-scope',taskId:'credential-task',paths,workspace:temp.dir,prompt:'Synthetic runner; no model.',
-    runtime:{launcher:{command:process.execPath,prefixArgs:[],launcherScript:'not-a-real-cli'},home:path.join(temp.dir,'home'),version:'0.2.0-rc.2',env},
+    runtime:{launcher:{command:process.execPath,prefixArgs:[],launcherScript:'not-a-real-cli'},home:path.join(temp.dir,'home'),version:'0.2.1-rc.2',env},
     credentialEnvironmentOptions:{platform:'win32',readUserImpl:()=>({DEEPSEEK_API_KEY:secret})},ensureProfileImpl:async()=>({name:'synthetic',fingerprint:'synthetic'}),onRuntime:r=>metadata=r,
-    superviseImpl:async options=>{observed=options;assert.equal(options.env.DEEPSEEK_API_KEY,secret);writeJsonAtomic(path.join(paths.dir,'policy.json'),{version:2,conversationKey:'credential-scope',taskId:'credential-task',sessionId:'credential-session',agentId:'credential-session',agentRole:'main',workspace:temp.dir,sandboxMode:'workspace-write',approvalPolicy:'ask',verified:true});options.onStdout(Buffer.from(JSON.stringify({type:'session',sessionId:'credential-session',cwd:temp.dir})+'\n'+JSON.stringify({type:'final',text:'fixture-only'})+'\n'));return {code:0,treeExited:true};}});
+    superviseImpl:syntheticSupervise({answer:'fixture-only',inspect:options=>{observed=options;assert.equal(options.env.DEEPSEEK_API_KEY,secret);}})});
   assert.equal(value.state,'completed');assert.equal(metadata.credentialEnvironment.refs[0].source,'windows-user');assert.equal(JSON.stringify(metadata).includes(secret),false);
-  assert.equal(contents(temp.dir).includes(secret),false);assert.doesNotMatch(fs.readFileSync(paths.overlay,'utf8'),/agent-default-model/);assert.equal(env.DEEPSEEK_API_KEY,undefined);assert.ok(observed);
+  assert.equal(contents(temp.dir).includes(secret),false);assert.match(fs.readFileSync(paths.overlay,'utf8'),/deepseek-flash/);assert.equal(env.DEEPSEEK_API_KEY,undefined);assert.ok(observed);
 });
 
 test('real Windows Guardian forwards a synthetic credential and evidence never stores it', {skip:process.platform!=='win32'}, async t => {

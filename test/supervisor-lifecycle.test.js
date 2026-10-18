@@ -259,3 +259,13 @@ test('explicit disconnect settles after process exit and stderr close even witho
   assert.equal((await f.completion).value.treeExited, true);
   assert.deepEqual(f.kills, []);
 });
+
+test('duplex supervision refuses an older worker before launch authorization', {timeout:30000},async t=>{
+  const f=fixture(t,{duplex:true});assert.equal(f.sent.some(e=>e.type==='launch'),false);
+  f.message({type:'hello',protocol:1,stdin:false});f.exit();f.close();const settled=await f.completion;
+  assert.equal(f.sent.some(e=>e.type==='launch'),false);assert.equal(settled.status,'rejected');assert.equal(settled.error.code,'GUARDIAN_PROTOCOL_MISMATCH');
+});
+test('duplex protocol 2 authorizes once and rejects a mismatched started handshake', {timeout:30000},async t=>{
+  const f=fixture(t,{duplex:true});f.message({type:'hello',protocol:2,stdin:true});assert.equal(f.sent.filter(e=>e.type==='launch').length,1);
+  f.message({type:'started',protocol:1,pid:process.pid});f.writeExitEvidence(0);f.exit();f.close();const settled=await f.completion;assert.equal(settled.status,'rejected');assert.equal(settled.error.code,'GUARDIAN_PROTOCOL_MISMATCH');
+});

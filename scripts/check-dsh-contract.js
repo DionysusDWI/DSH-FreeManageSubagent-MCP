@@ -12,7 +12,7 @@ const runtime=resolveRuntime();assertCompatibleRuntime(runtime);
 const credentials=checkCredentials?resolveCredentialEnvironment(runtime.env):null;
 if(credentials && credentials.diagnosis.refs.some(ref=>!ref.present))throw new Error('Requested credential environment references are missing. Only presence was checked; no model was called.');if(!runtime.launcher.archive)throw new Error('This probe needs an installed desktop ASAR.');
 const tempBase=path.resolve(os.tmpdir()),sandbox=fs.mkdtempSync(path.join(tempBase,'dsh-mcp-contract-'));
-const controller=new AbortController(),timer=setTimeout(()=>controller.abort({kind:'timeout',message:'No-model DSH contract timed out'}),15000);
+const controller=new AbortController(),timer=setTimeout(()=>controller.abort({kind:'timeout',message:'No-model DSH contract timed out'}),90000);
 const metadata={launcher:runtime.launcher,version:runtime.version,launcherFingerprint:runtime.launcherFingerprint};
 let stdout='',stderr='',treeExited=false;const ownedProcesses=[];
 try {

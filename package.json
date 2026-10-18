@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Generic local stdio MCP for supervised DSH Desktop tasks, explicit native sessions and durable reports.",
   "type": "module",

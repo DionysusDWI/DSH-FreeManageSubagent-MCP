@@ -12,7 +12,7 @@ import {readIntegrityLabel} from '../lib/win-integrity.js';
 export async function probeReadOnlyClient(client,{timeout=10000,diagnostics=''}={}) {
   const tools=await client.listTools({}, {timeout});
   const names=tools.tools.map(tool=>tool.name).sort();
-  if(JSON.stringify(names)!==JSON.stringify(['dsh_cancel','dsh_quarantine_release','dsh_quarantine_status','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']))throw new Error('Packaged MCP tools missing. '+diagnostics);
+  if(JSON.stringify(names)!==JSON.stringify(['dsh_cancel','dsh_capabilities','dsh_interactions','dsh_quarantine_release','dsh_quarantine_status','dsh_respond','dsh_self_check','dsh_sessions','dsh_status','dsh_steer','dsh_task']))throw new Error('Packaged MCP tools missing. '+diagnostics);
   if(tools.tools.filter(tool=>tool.name!=='dsh_self_check').some(tool=>!tool.outputSchema))throw new Error('Packaged outputSchema missing.');
   // The SDK's second callTool argument is a Zod result schema, not options.
   const health=await client.callTool({name:'dsh_self_check',arguments:{}},CallToolResultSchema,{timeout});

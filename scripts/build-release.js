@@ -9,6 +9,7 @@ import {ensureStageDir,placeWithoutLowLabel,verifyGuardianArtifact,readIntegrity
 import {validatePackage} from './validate-package.js';
 import {checkRelease} from './check-release.js';
 import {runtimeEnv} from '../lib/config.js';
+import {DSH_BASELINE,DSH_SOURCE_COMMIT,PROFILE_GENERATION,SDK_WIRE_VERSION} from '../lib/compatibility.js';
 const env=runtimeEnv(process.env);
 import {publicPackageFiles,scanPublicFiles,publicSourceFingerprint} from './public-files.js';
 if(process.platform!=='win32')throw new Error('This candidate packages the Windows Job Object guardian. Other platforms are not release-qualified.');
@@ -85,7 +86,7 @@ const files={};function walk(dir,prefix=''){for(const name of fs.readdirSync(dir
 walk(staging);const fingerprint=crypto.createHash('sha256').update(JSON.stringify(files)).digest('hex');
 const target=contained(path.join(dist,'dsh-mcp-'+pkg.version+'-win32-'+process.arch+'-'+fingerprint.slice(0,12)));
 if(fs.existsSync(target))throw new Error('Immutable release already exists: '+target+'; it was not overwritten.');
-fs.writeFileSync(path.join(staging,'release-manifest.json'),JSON.stringify({version:pkg.version,phase:'prerelease',sourceCommit,platform:process.platform,arch:process.arch,node:process.version,createdAt:new Date().toISOString(),fingerprint,files,guardianImageIntegrity:guardianVerdict.image.level,guardianLabelVerified:!guardianVerdict.image.raw,guardianProbe:'state-write-preflight',runtimeImageIntegrity:nodeLabel.level,runtimeWriteVerified:runtimeWrote,qualification:'Zero-model checks only. Paid models and specific host installations are unverified.'},null,2)+'\n');
+fs.writeFileSync(path.join(staging,'release-manifest.json'),JSON.stringify({version:pkg.version,dshBaseline:DSH_BASELINE,upstreamCommit:DSH_SOURCE_COMMIT,profileGeneration:PROFILE_GENERATION,guardianProtocol:2,sdkWireVersion:SDK_WIRE_VERSION,phase:'prerelease',sourceCommit,platform:process.platform,arch:process.arch,node:process.version,createdAt:new Date().toISOString(),fingerprint,files,guardianImageIntegrity:guardianVerdict.image.level,guardianLabelVerified:!guardianVerdict.image.raw,guardianProbe:'state-write-preflight',runtimeImageIntegrity:nodeLabel.level,runtimeWriteVerified:runtimeWrote,qualification:'Zero-model checks only. Paid models and specific host installations are unverified.'},null,2)+'\n');
 validatePackage(staging);
 const probe=await checkRelease(staging);fs.renameSync(staging,target);
 const archive=contained(target+'.zip');if(fs.existsSync(archive))throw new Error('Archive exists and was not overwritten.');

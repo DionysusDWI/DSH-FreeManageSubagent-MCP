@@ -12,7 +12,7 @@ import {tempDir} from './helpers.js';
 // Unlike parser stubs, these tests traverse the actual worker, Windows Job
 // helper (or POSIX group), IPC, log descriptors and task outcome derivation.
 const cli = fileURLToPath(new URL('./fixtures/synthetic-completion-cli.mjs', import.meta.url));
-for (const size of ['small', 'large', 'missing']) {
+for (const size of ['small', 'large', 'missing', 'unpersisted']) {
   test(`real Guardian drains ${size} completion through runner before closing task logs`, {timeout:30000}, async t => {
     const temp = tempDir('completion-runner');
     t.after(temp.cleanup);
@@ -23,7 +23,7 @@ for (const size of ['small', 'large', 'missing']) {
       workspace:temp.dir, prompt:'local synthetic fixture only', sandboxMode:'read-only', timeoutMs:20000,
       runtime:{
         launcher:{command:process.execPath, prefixArgs:[], launcherScript:cli},
-        home:path.join(temp.dir, 'home'), version:'0.2.0-rc.2',
+        home:path.join(temp.dir, 'home'), version:'0.2.1-rc.2',
         env:{...(process.env.SystemRoot ? {SystemRoot:process.env.SystemRoot} : {}),
           DSH_HOME:path.join(temp.dir, 'home'), SYNTHETIC_ANSWER:size,
           SYNTHETIC_END_MODE:size === 'missing' ? 'omit-final' : 'final'},
@@ -36,24 +36,28 @@ for (const size of ['small', 'large', 'missing']) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
       },
     });
-    assert.equal(result.exitCode, 0);
+    assert.equal(result.exitCode, 0, JSON.stringify({reason:result.reason,stderr:result.stderrTail}));
     assert.equal(result.treeExited, true);
-    assert.equal(result.sessionId, 'session-synthetic-completion');
-    assert.equal(progress, 1);
+    assert.match(result.sessionId, /^[a-f0-9-]{36}$/);
+    assert.equal(progress, size === 'missing' ? 0 : 1);
     const events = fs.readFileSync(paths.reportLog, 'utf8').trim().split('\n').map(JSON.parse);
-    assert.equal(events.at(-1).type, size === 'missing' ? 'status' : 'final');
-    assert.equal(events.at(-1).phase, size === 'missing' ? 'turn_end' : undefined);
+    assert.equal(events.at(-1).jsonrpc, '2.0');
+    assert.ok(events.some(e => e.method === 'session.event'));
+    assert.equal(events.at(-1).result !== undefined, true);
     assert.equal(fs.readFileSync(paths.stderrLog, 'utf8'), 'SYNTHETIC_STDERR_TAIL\n');
     assert.equal(result.stderrTail, 'SYNTHETIC_STDERR_TAIL\n');
     if (size === 'missing') {
       assert.equal(result.state, 'failed');
       assert.equal(result.answer, null);
-      assert.match(result.reason.message, /without successful completion/);
+      assert.match(result.reason.message, /without a successful native turn/);
+    } else if (size === 'unpersisted') {
+      assert.equal(result.state, 'failed');
+      assert.equal(result.reason.code, 'SDK_COMPLETION_UNPROVEN');
     } else {
       const answer = size === 'large' ? 'SYNTHETIC_COMPLETE:' + 'ёж✓'.repeat(20000) : 'SYNTHETIC_COMPLETE';
       assert.equal(result.state, 'completed');
       assert.equal(result.answer, answer);
-      assert.equal(events.at(-1).text, answer);
+      assert.equal(events.find(e => e.params?.event?.type === 'assistant/message').params.event.data.message.content[0].text, answer);
       if (size === 'large') assert.ok(Buffer.byteLength(answer) > 128 * 1024);
     }
     const stages = fs.readdirSync(path.join(paths.dir, 'supervision'));

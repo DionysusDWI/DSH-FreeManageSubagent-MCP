@@ -14,7 +14,7 @@ function fixture(t) {
   const temp = tempDir('profile-root'); t.after(temp.cleanup);
   const cli = path.join(temp.dir, 'cli.js'); fs.writeFileSync(cli, '// fixture');
   const env = isolatedEnv(temp.dir, { DSH_HOME: path.join(temp.dir, 'home'), DSH_MCP_DSH: cli });
-  const runtime = resolveRuntime(env); runtime.version = '0.2.0-rc.2';
+  const runtime = resolveRuntime(env); runtime.version = '0.2.1-rc.2';
   let installs = 0;
   const opts = { env, runtime, allowProvision: true, runDshImpl: async () => {
     installs++; const target = profileTarget({ env, runtime });
@@ -35,7 +35,7 @@ async function rejectsWithoutInstall(f, expectedMessage) {
   }
   assert.equal(f.installs(), count);
 }
-test('canonical DSH root bytes and profile-v2 fingerprint are stable over repeated preparation', async t => {
+test('canonical DSH root bytes and SDK-generation fingerprint are stable over repeated preparation', async t => {
   const f = await ready(t), root = path.join(f.profile.dir, 'cordis.yml');
   assert.equal(Buffer.byteLength(ROOT), 223); assert.equal(fs.readFileSync(root, 'utf8'), ROOT);
   const marker = JSON.parse(fs.readFileSync(path.join(f.profile.dir, '.bridge-profile.json'))); assert.equal(marker.version, 2);

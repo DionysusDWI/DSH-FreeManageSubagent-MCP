@@ -48,6 +48,40 @@ class JobHost {
     do { Check(QueryInformationJobObject(job,1,out account,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero),"QueryInformationJobObject"); if(account.activeProcesses==0)break; if(deadline.ElapsedMilliseconds>10000)throw new Exception("Job descendants did not exit"); Thread.Sleep(10); }while(true);
     evidence["proof"]="job-empty";evidence["activeProcesses"]=0;Stage("job-empty");
   }
+  const int PROTOCOL=2, MAX_INPUT=1024*1024, INPUT_CHUNK=32768;
+  class InputFrame { public long id; public byte[] bytes; public bool eof; }
+  static readonly object inputLock=new object();
+  static Queue<InputFrame> inputQueue=new Queue<InputFrame>();
+  static int queuedInput;
+  static bool inputStopping,inputEnded;
+  static FileStream inputStream;
+  static Thread InputPump(IntPtr handle) {
+    inputStream=new FileStream(new SafeFileHandle(handle,true),FileAccess.Write,4096,false);
+    Thread thread=new Thread(()=> {
+      try {
+        while(true) {
+          InputFrame frame;
+          lock(inputLock) { while(inputQueue.Count==0 && !inputStopping)Monitor.Wait(inputLock); if(inputStopping)return; frame=inputQueue.Dequeue(); }
+          if(frame.eof)inputStream.Dispose();
+          else {inputStream.Write(frame.bytes,0,frame.bytes.Length);inputStream.Flush();}
+          lock(inputLock)queuedInput-=frame.bytes==null?0:frame.bytes.Length;
+          Emit(new {type="stdin-ack",id=frame.id});
+          if(frame.eof)return;
+        }
+      } catch(Exception error) { if(!inputStopping&&!stopping){Emit(new {type="error",code="GUARDIAN_INPUT_FAILED",message=error.Message});Stop();} }
+      finally {inputStream.Dispose();}
+    });thread.IsBackground=true;thread.Start();return thread;
+  }
+  static void QueueInput(Dictionary<string,object> input) {
+    string type=(string)input["type"];bool eof=type=="stdin-end";
+    byte[] bytes=eof?null:Convert.FromBase64String((string)input["data"]);
+    if(bytes!=null && bytes.Length>INPUT_CHUNK)throw new Exception("Guardian stdin frame limit");
+    lock(inputLock) {
+      if(inputEnded||inputStopping||queuedInput+(bytes==null?0:bytes.Length)>MAX_INPUT)throw new Exception("Guardian stdin closed or credit exceeded");
+      inputEnded=eof;queuedInput+=bytes==null?0:bytes.Length;
+      inputQueue.Enqueue(new InputFrame {id=Convert.ToInt64(input["id"]),bytes=bytes,eof=eof});Monitor.PulseAll(inputLock);
+    }
+  }
   [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public int length; public IntPtr descriptor; public int inherit; }
   [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct STARTUPINFO { public int cb; public string reserved,desktop,title; public uint x,y,xSize,ySize,xChars,yChars,fill,flags; public ushort show,reserved2; public IntPtr reservedPtr,stdin,stdout,stderr; }
   [StructLayout(LayoutKind.Sequential)] struct STARTUPINFOEX { public STARTUPINFO startup; public IntPtr attributes; }
@@ -96,8 +130,10 @@ class JobHost {
     IntPtr attributes=IntPtr.Zero,jobList=IntPtr.Zero,handleList=IntPtr.Zero;
     try {
       Console.OutputEncoding=new UTF8Encoding(false); Console.InputEncoding=new UTF8Encoding(false);
+      Emit(new {type="hello",protocol=PROTOCOL,stdin=true});
       string line=Console.ReadLine(); if(line==null) throw new Exception("No launch request");
       Dictionary<string,object> request=serializer.Deserialize<Dictionary<string,object>>(line);
+      if(!request.ContainsKey("protocol") || Convert.ToInt32(request["protocol"])!=PROTOCOL)throw new Exception("GUARDIAN_PROTOCOL_MISMATCH");
       if(request.ContainsKey("supervisionDir")) {
         evidenceDir=(string)request["supervisionDir"];attemptId=(string)request["attemptId"];jobId=(string)request["jobId"];
         var self=Process.GetCurrentProcess();evidence["helper"]=new {pid=self.Id,creationTime=self.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()};
@@ -139,15 +175,31 @@ class JobHost {
       Check(ResumeThread(pi.thread)!=0xffffffff,"ResumeThread");
       CloseHandle(pi.thread); pi.thread=IntPtr.Zero;
       CloseHandle(outWrite); outWrite=IntPtr.Zero; CloseHandle(errWrite); errWrite=IntPtr.Zero;
-      CloseHandle(inRead); inRead=IntPtr.Zero; CloseHandle(inWrite); inWrite=IntPtr.Zero;
+      CloseHandle(inRead); inRead=IntPtr.Zero;
+      bool duplex=request.ContainsKey("duplex") && (bool)request["duplex"];
+      Thread stdin=null;
+      if(duplex){stdin=InputPump(inWrite);inWrite=IntPtr.Zero;}else{CloseHandle(inWrite);inWrite=IntPtr.Zero;}
       Stage("running");
-      Emit(new { type="started",pid=pi.pid,supervision="windows-job-kill-on-close" });
+      Emit(new { type="started",protocol=PROTOCOL,pid=pi.pid,supervision="windows-job-kill-on-close" });
       Thread stdout=Pump(outRead,"stdout"); outRead=IntPtr.Zero;
       Thread stderr=Pump(errRead,"stderr"); errRead=IntPtr.Zero;
-      Thread control=new Thread(()=> { try { string message; while((message=Console.ReadLine())!=null) { Dictionary<string,object> input=serializer.Deserialize<Dictionary<string,object>>(message); if((string)input["type"]=="kill") { Stop(); return; } } Stop(); } catch { Stop(); } }); control.IsBackground=true; control.Start();
+      Thread control=new Thread(()=> { try {
+        string message;
+        while((message=Console.ReadLine())!=null) {
+          if(message.Length>65536)throw new Exception("Guardian control frame limit");
+          Dictionary<string,object> controlInput=serializer.Deserialize<Dictionary<string,object>>(message);
+          string type=(string)controlInput["type"];
+          if(type=="kill"){Stop();return;}
+          if(duplex && (type=="stdin"||type=="stdin-end"))QueueInput(controlInput);
+          else throw new Exception("Unknown guardian control frame");
+        }
+        Stop();
+      }catch(Exception error){Emit(new {type="error",code="GUARDIAN_INPUT_FAILED",message=error.Message});Stop();} });control.IsBackground=true;control.Start();
       Check(WaitForSingleObject(process,0xffffffff)==0,"WaitForSingleObject"); uint code; Check(GetExitCodeProcess(process,out code),"GetExitCodeProcess");
       // A settled leader is not sufficient: force any lingering descendants and confirm an empty job.
       evidence["exitCode"]=unchecked((int)code); EmptyJob();
+      lock(inputLock){inputStopping=true;Monitor.PulseAll(inputLock);}
+      if(stdin!=null && !stdin.Join(5000))throw new Exception("Stdin relay did not finish");
       if(!stdout.Join(5000) || !stderr.Join(5000)) throw new Exception("Pipe relay did not finish");
       Emit(new { type="exit",code=unchecked((int)code),terminated=stopping,treeExited=true }); return 0;
     } catch(Exception e) {
